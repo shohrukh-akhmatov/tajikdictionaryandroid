@@ -1,0 +1,126 @@
+package tj.tajikdictionary.ui.settings
+
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
+import tj.tajikdictionary.R
+import tj.tajikdictionary.data.dictionary.DictionaryRepository
+import tj.tajikdictionary.data.settings.SettingsRepository
+import tj.tajikdictionary.data.settings.ThemeSetting
+import tj.tajikdictionary.domain.model.DictionaryInfo
+import tj.tajikdictionary.domain.model.DictionaryMode
+import tj.tajikdictionary.ui.components.ModeSwitcher
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    dictionary: DictionaryRepository,
+    settings: SettingsRepository,
+    modifier: Modifier = Modifier,
+) {
+    val mode by settings.mode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
+    val theme by settings.theme.collectAsStateWithLifecycle(initialValue = ThemeSetting.SYSTEM)
+    val info by produceState<DictionaryInfo?>(initialValue = null, dictionary) {
+        value = dictionary.info()
+    }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    Scaffold(
+        modifier = modifier,
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_settings)) }) },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(stringResource(R.string.settings_default_mode), style = MaterialTheme.typography.titleSmall)
+            ModeSwitcher(
+                mode = mode,
+                onModeChange = { newMode -> scope.launch { settings.setMode(newMode) } },
+            )
+
+            Text(stringResource(R.string.settings_appearance), style = MaterialTheme.typography.titleSmall)
+            val themes = ThemeSetting.entries
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                themes.forEachIndexed { index, item ->
+                    SegmentedButton(
+                        selected = item == theme,
+                        onClick = { scope.launch { settings.setTheme(item) } },
+                        shape = SegmentedButtonDefaults.itemShape(index, themes.size),
+                    ) {
+                        Text(
+                            when (item) {
+                                ThemeSetting.SYSTEM -> stringResource(R.string.theme_system)
+                                ThemeSetting.LIGHT -> stringResource(R.string.theme_light)
+                                ThemeSetting.DARK -> stringResource(R.string.theme_dark)
+                            },
+                        )
+                    }
+                }
+            }
+
+            Text(stringResource(R.string.settings_about), style = MaterialTheme.typography.titleSmall)
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.app_name)) },
+                        supportingContent = { Text("v0.1.0 · Offline Tajik–Russian–English") },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp)
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.settings_data_version)) },
+                        supportingContent = { Text(info?.dataVersion?.ifEmpty { "—" } ?: "…") },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp)
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.settings_stats)) },
+                        supportingContent = { Text(info?.stats?.ifEmpty { "—" } ?: "…") },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp)
+                    ListItem(
+                        modifier = Modifier.clickable {
+                            val mail = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:support@tajikdictionary.tj"))
+                                .putExtra(Intent.EXTRA_SUBJECT, "Tajik Dictionary feedback")
+                            runCatching { context.startActivity(mail) }
+                        },
+                        headlineContent = { Text(stringResource(R.string.settings_report_mistake)) },
+                        supportingContent = { Text(stringResource(R.string.settings_report_mistake_sub)) },
+                    )
+                }
+            }
+        }
+    }
+}
