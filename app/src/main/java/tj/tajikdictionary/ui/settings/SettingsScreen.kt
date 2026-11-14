@@ -2,6 +2,8 @@ package tj.tajikdictionary.ui.settings
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,23 +24,31 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import tj.tajikdictionary.R
 import tj.tajikdictionary.data.dictionary.DictionaryRepository
 import tj.tajikdictionary.data.settings.FontScaleSetting
 import tj.tajikdictionary.data.settings.SettingsRepository
 import tj.tajikdictionary.data.settings.ThemeSetting
+import tj.tajikdictionary.data.user.FavoritesBackup
+import tj.tajikdictionary.data.user.UserDataRepository
 import tj.tajikdictionary.domain.model.DictionaryInfo
 import tj.tajikdictionary.domain.model.DictionaryMode
 import tj.tajikdictionary.ui.components.ModeSwitcher
@@ -47,6 +57,7 @@ import tj.tajikdictionary.ui.components.ModeSwitcher
 @Composable
 fun SettingsScreen(
     dictionary: DictionaryRepository,
+    userData: UserDataRepository,
     settings: SettingsRepository,
     onOpenGrammarGuide: () -> Unit,
     onOpenStudy: () -> Unit,
@@ -61,10 +72,57 @@ fun SettingsScreen(
     }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val items = userData.favorites.first()
+            val payload = FavoritesBackup.encode(items)
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        out.write(payload.toByteArray(Charsets.UTF_8))
+                    } != null
+                }.getOrDefault(false)
+            }
+            val msg = if (ok) {
+                context.getString(R.string.backup_exported, items.size)
+            } else {
+                context.getString(R.string.backup_failed)
+            }
+            snackbarHostState.showSnackbar(msg)
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val count = withContext(Dispatchers.IO) {
+                runCatching {
+                    val json = context.contentResolver.openInputStream(uri)?.use { input ->
+                        input.bufferedReader(Charsets.UTF_8).readText()
+                    } ?: error("Empty file")
+                    FavoritesBackup.decode(json)
+                }.map { decoded -> userData.importFavorites(decoded) }.getOrNull()
+            }
+            val msg = if (count != null) {
+                context.getString(R.string.backup_imported, count)
+            } else {
+                context.getString(R.string.backup_failed)
+            }
+            snackbarHostState.showSnackbar(msg)
+        }
+    }
 
     Scaffold(
         modifier = modifier,
         topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_settings)) }) },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -155,12 +213,31 @@ fun SettingsScreen(
                 }
             }
 
+            Text(stringResource(R.string.settings_backup), style = MaterialTheme.typography.titleSmall)
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    ListItem(
+                        modifier = Modifier.clickable { exportLauncher.launch("tajik-dictionary-favorites.json") },
+                        headlineContent = { Text(stringResource(R.string.backup_export_title)) },
+                        supportingContent = { Text(stringResource(R.string.backup_export_sub)) },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp)
+                    ListItem(
+                        modifier = Modifier.clickable {
+                            importLauncher.launch(arrayOf("application/json", "text/*"))
+                        },
+                        headlineContent = { Text(stringResource(R.string.backup_import_title)) },
+                        supportingContent = { Text(stringResource(R.string.backup_import_sub)) },
+                    )
+                }
+            }
+
             Text(stringResource(R.string.settings_about), style = MaterialTheme.typography.titleSmall)
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.app_name)) },
-                        supportingContent = { Text("v0.2.0 · Offline Tajik–Russian–English") },
+                        supportingContent = { Text("v0.3.0 · Offline Tajik–Russian–English") },
                     )
                     HorizontalDivider(thickness = 0.5.dp)
                     ListItem(

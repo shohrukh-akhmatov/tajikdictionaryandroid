@@ -70,4 +70,13 @@
     <string name="grammar_guide_sub">Special letters ғ ӣ қ ӯ ҳ ҷ and key patterns</string>
     <string name="grammar_letters_title">Tajik-specific letters</string>
     <string name="grammar_patterns_title">Common grammar patterns</string>
+    <string name="settings_backup">Backup &amp; Transfer</string>
+    <string name="backup_export_title">Export saved words (JSON)</string>
+    <string name="backup_export_sub">Save bookmarks to a portable file</string>
+    <string name="backup_import_title">Import saved words (JSON)</string>
+    <string name="backup_import_sub">Restore bookmarks from Android or iOS backup</string>
+    <string name="backup_exported">Exported %1$d saved words</string>
+    <string name="backup_imported">Imported %1$d saved words</string>
+    <string name="backup_failed">Could not read or write backup file</string>
+    <string name="widget_description">Shows today\'s Tajik Word of the Day</string>
 </resources>

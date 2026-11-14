@@ -33,6 +33,18 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".widget.WordOfTheDayWidget"
+            android:exported="true"
+            android:label="@string/word_of_the_day">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/word_of_the_day_widget_info" />
+        </receiver>
     </application>
 
     <queries>

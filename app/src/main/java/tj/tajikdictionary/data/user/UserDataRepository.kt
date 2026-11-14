@@ -25,6 +25,12 @@ class UserDataRepository(private val db: UserDatabase) {
 
     suspend fun removeFavorite(entryId: Long) = db.favorites().delete(entryId)
 
+    /** Upserts imported favorites; returns number of records written. */
+    suspend fun importFavorites(items: List<FavoriteEntity>): Int {
+        items.forEach { db.favorites().upsert(it) }
+        return items.size
+    }
+
     /** Records a viewed entry; re-viewing moves it to the top. */
     suspend fun recordView(entryId: Long, language: Language, headword: String, preview: String) {
         db.history().upsert(HistoryEntity(entryId, language.code, headword, preview, System.currentTimeMillis()))

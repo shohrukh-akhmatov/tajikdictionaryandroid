@@ -12,6 +12,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -46,15 +47,34 @@ private enum class TopTab(val route: String, val labelRes: Int, val icon: ImageV
     SETTINGS("settings", R.string.tab_settings, Icons.Filled.Settings),
 }
 
+data class LaunchRequest(
+    val query: String = "",
+    val entryId: Long? = null,
+    val seq: Long = 0L,
+)
+
 @Composable
 fun TajikDictionaryRoot(
     container: AppContainer,
-    initialQuery: String = "",
+    launchRequest: LaunchRequest = LaunchRequest(),
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = TopTab.entries.any { it.route == currentRoute }
+
+    LaunchedEffect(launchRequest.seq) {
+        if (launchRequest.seq == 0L) return@LaunchedEffect
+        val entryId = launchRequest.entryId
+        if (entryId != null && entryId > 0L) {
+            navController.navigate("entry/$entryId") { launchSingleTop = true }
+        } else if (launchRequest.query.isNotBlank()) {
+            navController.navigate(TopTab.SEARCH.route) {
+                popUpTo(navController.graph.findStartDestination().id)
+                launchSingleTop = true
+            }
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -92,9 +112,14 @@ fun TajikDictionaryRoot(
                         dictionary = container.dictionary,
                         userData = container.userData,
                         settings = container.settings,
-                        initialQuery = initialQuery,
+                        initialQuery = launchRequest.query,
                     ),
                 )
+                LaunchedEffect(launchRequest.seq) {
+                    if (launchRequest.seq > 0L && launchRequest.query.isNotBlank()) {
+                        vm.onQueryChange(launchRequest.query)
+                    }
+                }
                 SearchScreen(
                     viewModel = vm,
                     onEntryClick = openEntry,
@@ -128,6 +153,7 @@ fun TajikDictionaryRoot(
             composable(TopTab.SETTINGS.route) {
                 SettingsScreen(
                     dictionary = container.dictionary,
+                    userData = container.userData,
                     settings = container.settings,
                     onOpenGrammarGuide = { navController.navigate("grammar") },
                     onOpenStudy = { navController.navigate("study") },

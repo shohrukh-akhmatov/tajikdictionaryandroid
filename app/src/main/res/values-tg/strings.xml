@@ -70,4 +70,13 @@
     <string name="grammar_guide_sub">Ҳарфҳои ғ ӣ қ ӯ ҳ ҷ ва қоидаҳои асосӣ</string>
     <string name="grammar_letters_title">Ҳарфҳои хоси тоҷикӣ</string>
     <string name="grammar_patterns_title">Қоидаҳои асосӣ</string>
+    <string name="settings_backup">Нусхаи эҳтиётӣ</string>
+    <string name="backup_export_title">Содироти калимаҳои захирашуда (JSON)</string>
+    <string name="backup_export_sub">Захира кардани калимаҳо ба файл</string>
+    <string name="backup_import_title">Воридоти калимаҳои захирашуда (JSON)</string>
+    <string name="backup_import_sub">Барқарорсозӣ аз нусхаи Android ё iOS</string>
+    <string name="backup_exported">%1$d калима содир шуд</string>
+    <string name="backup_imported">%1$d калима ворид шуд</string>
+    <string name="backup_failed">Хондан ё навиштани файл нашуд</string>
+    <string name="widget_description">Калимаи рӯзи тоҷикиро нишон медиҳад</string>
 </resources>

@@ -70,4 +70,13 @@
     <string name="grammar_guide_sub">Буквы ғ ӣ қ ӯ ҳ ҷ и основные формы</string>
     <string name="grammar_letters_title">Особые буквы таджикского алфавита</string>
     <string name="grammar_patterns_title">Основные правила</string>
+    <string name="settings_backup">Резервная копия</string>
+    <string name="backup_export_title">Экспорт избранного (JSON)</string>
+    <string name="backup_export_sub">Сохранить закладки в переносимый файл</string>
+    <string name="backup_import_title">Импорт избранного (JSON)</string>
+    <string name="backup_import_sub">Восстановить закладки из резервной копии Android или iOS</string>
+    <string name="backup_exported">Экспортировано слов: %1$d</string>
+    <string name="backup_imported">Импортировано слов: %1$d</string>
+    <string name="backup_failed">Не удалось прочитать или сохранить файл</string>
+    <string name="widget_description">Показывает таджикское слово дня на главном экране</string>
 </resources>
