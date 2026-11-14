@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -33,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import tj.tajikdictionary.R
 import tj.tajikdictionary.data.dictionary.DictionaryRepository
+import tj.tajikdictionary.data.settings.FontScaleSetting
 import tj.tajikdictionary.data.settings.SettingsRepository
 import tj.tajikdictionary.data.settings.ThemeSetting
 import tj.tajikdictionary.domain.model.DictionaryInfo
@@ -44,10 +48,14 @@ import tj.tajikdictionary.ui.components.ModeSwitcher
 fun SettingsScreen(
     dictionary: DictionaryRepository,
     settings: SettingsRepository,
+    onOpenGrammarGuide: () -> Unit,
+    onOpenStudy: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val mode by settings.mode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
     val theme by settings.theme.collectAsStateWithLifecycle(initialValue = ThemeSetting.SYSTEM)
+    val speechRate by settings.speechRate.collectAsStateWithLifecycle(initialValue = 1.0f)
+    val fontScale by settings.fontScale.collectAsStateWithLifecycle(initialValue = FontScaleSetting.MEDIUM)
     val info by produceState<DictionaryInfo?>(initialValue = null, dictionary) {
         value = dictionary.info()
     }
@@ -92,12 +100,67 @@ fun SettingsScreen(
                 }
             }
 
+            Text(stringResource(R.string.settings_speech_speed), style = MaterialTheme.typography.titleSmall)
+            val speeds = listOf(0.75f to "0.75×", 1.0f to "1.0×")
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                speeds.forEachIndexed { index, (rate, label) ->
+                    SegmentedButton(
+                        selected = kotlin.math.abs(speechRate - rate) < 0.05f,
+                        onClick = { scope.launch { settings.setSpeechRate(rate) } },
+                        shape = SegmentedButtonDefaults.itemShape(index, speeds.size),
+                    ) { Text(label) }
+                }
+            }
+
+            Text(stringResource(R.string.settings_font_size), style = MaterialTheme.typography.titleSmall)
+            val scales = FontScaleSetting.entries
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                scales.forEachIndexed { index, item ->
+                    SegmentedButton(
+                        selected = item == fontScale,
+                        onClick = { scope.launch { settings.setFontScale(item) } },
+                        shape = SegmentedButtonDefaults.itemShape(index, scales.size),
+                    ) {
+                        Text(
+                            when (item) {
+                                FontScaleSetting.SMALL -> stringResource(R.string.font_small)
+                                FontScaleSetting.MEDIUM -> stringResource(R.string.font_medium)
+                                FontScaleSetting.LARGE -> stringResource(R.string.font_large)
+                            },
+                        )
+                    }
+                }
+            }
+
+            Text(stringResource(R.string.settings_learning), style = MaterialTheme.typography.titleSmall)
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    ListItem(
+                        modifier = Modifier.clickable(onClick = onOpenStudy),
+                        headlineContent = { Text(stringResource(R.string.study_flashcards)) },
+                        supportingContent = { Text(stringResource(R.string.study_flashcards_sub)) },
+                        trailingContent = {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+                        },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp)
+                    ListItem(
+                        modifier = Modifier.clickable(onClick = onOpenGrammarGuide),
+                        headlineContent = { Text(stringResource(R.string.grammar_guide_title)) },
+                        supportingContent = { Text(stringResource(R.string.grammar_guide_sub)) },
+                        trailingContent = {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+                        },
+                    )
+                }
+            }
+
             Text(stringResource(R.string.settings_about), style = MaterialTheme.typography.titleSmall)
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.app_name)) },
-                        supportingContent = { Text("v0.1.0 · Offline Tajik–Russian–English") },
+                        supportingContent = { Text("v0.2.0 · Offline Tajik–Russian–English") },
                     )
                     HorizontalDivider(thickness = 0.5.dp)
                     ListItem(

@@ -10,12 +10,14 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 /**
- * User data (favorites, history). Kept separate from the read-only dictionary so it survives
- * dictionary updates. `lang + headword` are stored alongside `entryId` so items can be re-linked
- * if entry IDs change between data versions.
+ * User data (favorites, history, flashcards). Kept separate from the read-only dictionary so it
+ * survives dictionary updates. `lang + headword` are stored alongside `entryId` so items can be
+ * re-linked if entry IDs change between data versions.
  */
 @Entity(tableName = "favorites", indices = [Index(value = ["lang", "headword"])])
 data class FavoriteEntity(
@@ -33,6 +35,18 @@ data class HistoryEntity(
     val headword: String,
     val preview: String,
     val viewedAt: Long,
+)
+
+@Entity(tableName = "flashcards", indices = [Index(value = ["nextReviewAt"])])
+data class FlashcardEntity(
+    @PrimaryKey val entryId: Long,
+    val lang: String,
+    val headword: String,
+    val preview: String,
+    val repetitions: Int,
+    val intervalDays: Int,
+    val easeFactor: Double,
+    val nextReviewAt: Long,
 )
 
 @Dao
@@ -73,13 +87,53 @@ interface HistoryDao {
     }
 }
 
-@Database(entities = [FavoriteEntity::class, HistoryEntity::class], version = 1, exportSchema = true)
+@Dao
+interface FlashcardsDao {
+    @Query("SELECT * FROM flashcards ORDER BY nextReviewAt ASC")
+    fun observeAll(): Flow<List<FlashcardEntity>>
+
+    @Query("SELECT * FROM flashcards WHERE entryId = :entryId")
+    suspend fun get(entryId: Long): FlashcardEntity?
+
+    @Upsert
+    suspend fun upsert(item: FlashcardEntity)
+}
+
+@Database(
+    entities = [FavoriteEntity::class, HistoryEntity::class, FlashcardEntity::class],
+    version = 2,
+    exportSchema = true,
+)
 abstract class UserDatabase : RoomDatabase() {
     abstract fun favorites(): FavoritesDao
     abstract fun history(): HistoryDao
+    abstract fun flashcards(): FlashcardsDao
 
     companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `flashcards` (
+                        `entryId` INTEGER NOT NULL,
+                        `lang` TEXT NOT NULL,
+                        `headword` TEXT NOT NULL,
+                        `preview` TEXT NOT NULL,
+                        `repetitions` INTEGER NOT NULL,
+                        `intervalDays` INTEGER NOT NULL,
+                        `easeFactor` REAL NOT NULL,
+                        `nextReviewAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`entryId`)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_flashcards_nextReviewAt` ON `flashcards` (`nextReviewAt`)")
+            }
+        }
+
         fun create(context: Context): UserDatabase =
-            Room.databaseBuilder(context, UserDatabase::class.java, "user.db").build()
+            Room.databaseBuilder(context, UserDatabase::class.java, "user.db")
+                .addMigrations(MIGRATION_1_2)
+                .build()
     }
 }

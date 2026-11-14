@@ -35,7 +35,9 @@ import android.net.Uri
 import tj.tajikdictionary.ui.search.SearchScreen
 import tj.tajikdictionary.ui.search.SearchViewModel
 import tj.tajikdictionary.ui.search.TopicEntriesScreen
+import tj.tajikdictionary.ui.settings.GrammarGuideScreen
 import tj.tajikdictionary.ui.settings.SettingsScreen
+import tj.tajikdictionary.ui.study.StudyScreen
 
 private enum class TopTab(val route: String, val labelRes: Int, val icon: ImageVector) {
     SEARCH("search", R.string.tab_dictionary, Icons.AutoMirrored.Filled.MenuBook),
@@ -110,16 +112,47 @@ fun TajikDictionaryRoot(
                     settings = container.settings,
                     onBack = { navController.popBackStack() },
                     onEntryClick = openEntry,
+                    onStudyTopic = { t -> navController.navigate("study?topic=${Uri.encode(t)}") },
                 )
             }
             composable(TopTab.SAVED.route) {
-                FavoritesScreen(userData = container.userData, onEntryClick = openEntry)
+                FavoritesScreen(
+                    userData = container.userData,
+                    onEntryClick = openEntry,
+                    onStudyClick = { navController.navigate("study") },
+                )
             }
             composable(TopTab.HISTORY.route) {
                 HistoryScreen(userData = container.userData, onEntryClick = openEntry)
             }
             composable(TopTab.SETTINGS.route) {
-                SettingsScreen(dictionary = container.dictionary, settings = container.settings)
+                SettingsScreen(
+                    dictionary = container.dictionary,
+                    settings = container.settings,
+                    onOpenGrammarGuide = { navController.navigate("grammar") },
+                    onOpenStudy = { navController.navigate("study") },
+                )
+            }
+            composable(
+                route = "study?topic={topic}",
+                arguments = listOf(
+                    navArgument("topic") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { entry ->
+                StudyScreen(
+                    dictionary = container.dictionary,
+                    userData = container.userData,
+                    settings = container.settings,
+                    initialTopic = entry.arguments?.getString("topic"),
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable("grammar") {
+                GrammarGuideScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route = "entry/{entryId}",

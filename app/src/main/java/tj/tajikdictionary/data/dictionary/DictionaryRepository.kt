@@ -44,19 +44,13 @@ class DictionaryRepository(
                 return@withContext SearchOutcome(rawQuery, direct, languages, null, SearchMatchType.DIRECT)
             }
 
-            // Phase 1 fallback 1: Tajik / Russian / English morphological stem hints
+            // Phase 1 fallback 1: Tajik / Russian / English morphological stem hints (exact lemma match)
             val stems = WordStemmer.candidateStems(key, languages)
             if (stems.isNotEmpty()) {
-                val stemResults = LinkedHashMap<Long, SearchResult>()
-                for (stem in stems) {
-                    for (item in prefixSearch(stem, languages, mode, limit = 15)) {
-                        stemResults.putIfAbsent(item.id, item)
-                    }
-                    if (stemResults.size >= limit) break
-                }
+                val stemResults = exactMatches(stems, languages, mode, limit)
                 if (stemResults.isNotEmpty()) {
                     return@withContext SearchOutcome(
-                        rawQuery, stemResults.values.take(limit), languages, null, SearchMatchType.STEM,
+                        rawQuery, stemResults, languages, null, SearchMatchType.STEM,
                     )
                 }
             }
@@ -71,6 +65,47 @@ class DictionaryRepository(
 
             SearchOutcome(rawQuery, emptyList(), languages, suggestedMode = null)
         }
+
+    private fun exactMatches(
+        keys: List<String>,
+        languages: Set<Language>,
+        mode: DictionaryMode,
+        limit: Int,
+    ): List<SearchResult> {
+        val langPlaceholders = languages.joinToString(",") { "?" }
+        val keyPlaceholders = keys.joinToString(",") { "?" }
+        val sql = """
+            SELECT e.id, e.lang, e.headword, e.pos,
+                   (SELECT group_concat(h, ', ') FROM (
+                        SELECT t2.headword AS h
+                        FROM translations t JOIN entries t2 ON t2.id = t.to_id
+                        WHERE t.from_id = e.id
+                          AND t2.lang = CASE WHEN e.lang = 'tg' THEN ? ELSE 'tg' END
+                        ORDER BY t.position LIMIT 4)) AS preview
+            FROM entries e
+            WHERE e.lang IN ($langPlaceholders)
+              AND e.search_key IN ($keyPlaceholders)
+            ORDER BY e.frequency DESC, e.headword ASC
+            LIMIT $limit
+        """.trimIndent()
+        val args = buildList {
+            add(mode.partner.code)
+            languages.forEach { add(it.code) }
+            keys.forEach { add(it) }
+        }.toTypedArray()
+
+        return db.get().rawQuery(sql, args).use { c ->
+            c.mapRows {
+                SearchResult(
+                    id = getLong(0),
+                    language = Language.fromCode(getString(1)),
+                    headword = getString(2),
+                    pos = PartOfSpeech.fromCode(stringOrNull(3)),
+                    preview = stringOrNull(4).orEmpty(),
+                )
+            }
+        }
+    }
 
     private fun prefixSearch(
         key: String,

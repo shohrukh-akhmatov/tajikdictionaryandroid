@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -14,6 +15,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,6 +36,7 @@ import tj.tajikdictionary.ui.components.WordRow
 fun FavoritesScreen(
     userData: UserDataRepository,
     onEntryClick: (Long) -> Unit,
+    onStudyClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val favorites by userData.favorites.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -41,7 +44,19 @@ fun FavoritesScreen(
 
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_saved)) }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.tab_saved)) },
+                actions = {
+                    if (favorites.isNotEmpty()) {
+                        TextButton(onClick = onStudyClick) {
+                            Icon(Icons.Filled.School, contentDescription = null)
+                            Text(" ${stringResource(R.string.study_action)}")
+                        }
+                    }
+                },
+            )
+        },
     ) { padding ->
         if (favorites.isEmpty()) {
             EmptyState(

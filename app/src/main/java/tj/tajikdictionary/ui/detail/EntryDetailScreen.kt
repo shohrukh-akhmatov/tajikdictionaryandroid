@@ -139,9 +139,11 @@ fun EntryDetailScreen(
                         }
                         if (locale != null) {
                             tts.language = locale
+                            tts.setSpeechRate(state.speechRate)
                             tts.speak(detail.entry.headword, TextToSpeech.QUEUE_FLUSH, null, "entry_${detail.entry.id}")
                         }
                     },
+                    fontScale = state.fontScale.scale,
                     onCopy = { copyEntry(context, detail) },
                     onShare = { shareEntry(context, detail) },
                     onEntryClick = onEntryClick,
@@ -158,6 +160,7 @@ private fun DetailContent(
     preferredLanguage: Language,
     canSpeak: Boolean,
     onSpeak: () -> Unit,
+    fontScale: Float,
     onCopy: () -> Unit,
     onShare: () -> Unit,
     onEntryClick: (Long) -> Unit,
@@ -192,9 +195,10 @@ private fun DetailContent(
                         AssistChip(onClick = {}, label = { Text(topic) })
                     }
                 }
+                val baseHeadline = MaterialTheme.typography.headlineLarge
                 Text(
                     detail.entry.headword,
-                    style = MaterialTheme.typography.headlineLarge,
+                    style = baseHeadline.copy(fontSize = baseHeadline.fontSize * fontScale),
                     fontWeight = FontWeight.Bold,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

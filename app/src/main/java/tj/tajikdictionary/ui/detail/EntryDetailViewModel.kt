@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tj.tajikdictionary.data.dictionary.DictionaryRepository
+import tj.tajikdictionary.data.settings.FontScaleSetting
 import tj.tajikdictionary.data.settings.SettingsRepository
 import tj.tajikdictionary.data.user.UserDataRepository
 import tj.tajikdictionary.domain.model.DictionaryMode
@@ -21,6 +22,8 @@ data class EntryDetailUiState(
     val isLoading: Boolean = true,
     val isFavorite: Boolean = false,
     val mode: DictionaryMode = DictionaryMode.TJ_RU,
+    val speechRate: Float = 1.0f,
+    val fontScale: FontScaleSetting = FontScaleSetting.MEDIUM,
 )
 
 class EntryDetailViewModel(
@@ -36,8 +39,17 @@ class EntryDetailViewModel(
         loaded,
         userData.isFavorite(entryId),
         settings.mode,
-    ) { (detail, loading), fav, mode ->
-        EntryDetailUiState(detail = detail, isLoading = loading, isFavorite = fav, mode = mode)
+        settings.speechRate,
+        settings.fontScale,
+    ) { (detail, loading), fav, mode, rate, scale ->
+        EntryDetailUiState(
+            detail = detail,
+            isLoading = loading,
+            isFavorite = fav,
+            mode = mode,
+            speechRate = rate,
+            fontScale = scale,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EntryDetailUiState())
 
     init {
