@@ -43,4 +43,7 @@
     <string name="settings_stats">Словарь офлайн</string>
     <string name="settings_report_mistake">Сообщить об ошибке</string>
     <string name="settings_report_mistake_sub">Написать о неточности или предложить слово</string>
+    <string name="topics_title">Темы</string>
+    <string name="match_stem_hint">Показаны начальные формы для «%1$s»</string>
+    <string name="match_fuzzy_hint">Показаны похожие по написанию слова</string>
 </resources>

@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import tj.tajikdictionary.core.text.LanguageDetector
 import tj.tajikdictionary.core.text.TextNormalizer
+import tj.tajikdictionary.core.text.WordStemmer
 import tj.tajikdictionary.domain.model.DictionaryInfo
 import tj.tajikdictionary.domain.model.DictionaryMode
 import tj.tajikdictionary.domain.model.Entry
@@ -13,8 +14,10 @@ import tj.tajikdictionary.domain.model.EntryDetail
 import tj.tajikdictionary.domain.model.Example
 import tj.tajikdictionary.domain.model.Language
 import tj.tajikdictionary.domain.model.PartOfSpeech
+import tj.tajikdictionary.domain.model.SearchMatchType
 import tj.tajikdictionary.domain.model.SearchOutcome
 import tj.tajikdictionary.domain.model.SearchResult
+import tj.tajikdictionary.domain.model.TopicCount
 import tj.tajikdictionary.domain.model.Translation
 import java.time.LocalDate
 
@@ -36,41 +39,174 @@ class DictionaryRepository(
                 return@withContext SearchOutcome(rawQuery, emptyList(), emptySet(), suggestion)
             }
 
-            val placeholders = languages.joinToString(",") { "?" }
-            val sql = """
-                SELECT e.id, e.lang, e.headword, e.pos,
-                       (SELECT group_concat(h, ', ') FROM (
-                            SELECT t2.headword AS h
-                            FROM translations t JOIN entries t2 ON t2.id = t.to_id
-                            WHERE t.from_id = e.id
-                              AND t2.lang = CASE WHEN e.lang = 'tg' THEN ? ELSE 'tg' END
-                            ORDER BY t.position LIMIT 4)) AS preview
-                FROM entries e
-                WHERE e.lang IN ($placeholders)
-                  AND e.search_key >= ?
-                  AND e.search_key < ? || char(65535)
-                ORDER BY (e.search_key = ?) DESC, e.frequency DESC, length(e.headword) ASC, e.headword ASC
-                LIMIT $limit
-            """.trimIndent()
-            val args = buildList {
-                add(mode.partner.code)
-                languages.forEach { add(it.code) }
-                add(key); add(key); add(key)
-            }.toTypedArray()
+            val direct = prefixSearch(key, languages, mode, limit)
+            if (direct.isNotEmpty()) {
+                return@withContext SearchOutcome(rawQuery, direct, languages, null, SearchMatchType.DIRECT)
+            }
 
-            val results = db.get().rawQuery(sql, args).use { c ->
-                c.mapRows {
-                    SearchResult(
-                        id = getLong(0),
-                        language = Language.fromCode(getString(1)),
-                        headword = getString(2),
-                        pos = PartOfSpeech.fromCode(stringOrNull(3)),
-                        preview = stringOrNull(4).orEmpty(),
+            // Phase 1 fallback 1: Tajik / Russian / English morphological stem hints
+            val stems = WordStemmer.candidateStems(key, languages)
+            if (stems.isNotEmpty()) {
+                val stemResults = LinkedHashMap<Long, SearchResult>()
+                for (stem in stems) {
+                    for (item in prefixSearch(stem, languages, mode, limit = 15)) {
+                        stemResults.putIfAbsent(item.id, item)
+                    }
+                    if (stemResults.size >= limit) break
+                }
+                if (stemResults.isNotEmpty()) {
+                    return@withContext SearchOutcome(
+                        rawQuery, stemResults.values.take(limit), languages, null, SearchMatchType.STEM,
                     )
                 }
             }
-            SearchOutcome(rawQuery, results, languages, suggestedMode = null)
+
+            // Phase 1 fallback 2: bounded edit-distance typo tolerance
+            if (key.length >= 3) {
+                val fuzzy = fuzzySearch(key, languages, mode, limit = 20)
+                if (fuzzy.isNotEmpty()) {
+                    return@withContext SearchOutcome(rawQuery, fuzzy, languages, null, SearchMatchType.FUZZY)
+                }
+            }
+
+            SearchOutcome(rawQuery, emptyList(), languages, suggestedMode = null)
         }
+
+    private fun prefixSearch(
+        key: String,
+        languages: Set<Language>,
+        mode: DictionaryMode,
+        limit: Int,
+    ): List<SearchResult> {
+        val placeholders = languages.joinToString(",") { "?" }
+        val sql = """
+            SELECT e.id, e.lang, e.headword, e.pos,
+                   (SELECT group_concat(h, ', ') FROM (
+                        SELECT t2.headword AS h
+                        FROM translations t JOIN entries t2 ON t2.id = t.to_id
+                        WHERE t.from_id = e.id
+                          AND t2.lang = CASE WHEN e.lang = 'tg' THEN ? ELSE 'tg' END
+                        ORDER BY t.position LIMIT 4)) AS preview
+            FROM entries e
+            WHERE e.lang IN ($placeholders)
+              AND e.search_key >= ?
+              AND e.search_key < ? || char(65535)
+            ORDER BY (e.search_key = ?) DESC, e.frequency DESC, length(e.headword) ASC, e.headword ASC
+            LIMIT $limit
+        """.trimIndent()
+        val args = buildList {
+            add(mode.partner.code)
+            languages.forEach { add(it.code) }
+            add(key); add(key); add(key)
+        }.toTypedArray()
+
+        return db.get().rawQuery(sql, args).use { c ->
+            c.mapRows {
+                SearchResult(
+                    id = getLong(0),
+                    language = Language.fromCode(getString(1)),
+                    headword = getString(2),
+                    pos = PartOfSpeech.fromCode(stringOrNull(3)),
+                    preview = stringOrNull(4).orEmpty(),
+                )
+            }
+        }
+    }
+
+    private fun fuzzySearch(
+        key: String,
+        languages: Set<Language>,
+        mode: DictionaryMode,
+        limit: Int,
+    ): List<SearchResult> {
+        val maxDist = if (key.length >= 5) 2 else 1
+        val minLen = (key.length - maxDist).coerceAtLeast(2)
+        val maxLen = key.length + maxDist
+        val placeholders = languages.joinToString(",") { "?" }
+        val sql = """
+            SELECT e.id, e.lang, e.headword, e.pos, e.search_key, e.frequency,
+                   (SELECT group_concat(h, ', ') FROM (
+                        SELECT t2.headword AS h
+                        FROM translations t JOIN entries t2 ON t2.id = t.to_id
+                        WHERE t.from_id = e.id
+                          AND t2.lang = CASE WHEN e.lang = 'tg' THEN ? ELSE 'tg' END
+                        ORDER BY t.position LIMIT 4)) AS preview
+            FROM entries e
+            WHERE e.lang IN ($placeholders)
+              AND length(e.search_key) BETWEEN ? AND ?
+            ORDER BY e.frequency DESC
+            LIMIT 400
+        """.trimIndent()
+        val args = buildList {
+            add(mode.partner.code)
+            languages.forEach { add(it.code) }
+            add(minLen.toString())
+            add(maxLen.toString())
+        }.toTypedArray()
+
+        data class Scored(val dist: Int, val freq: Int, val result: SearchResult)
+        val scored = ArrayList<Scored>()
+        db.get().rawQuery(sql, args).use { c ->
+            while (c.moveToNext()) {
+                val candidateKey = c.getString(4)
+                val dist = WordStemmer.editDistance(key, candidateKey, maxDist)
+                if (dist <= maxDist) {
+                    scored += Scored(
+                        dist = dist,
+                        freq = c.getInt(5),
+                        result = SearchResult(
+                            id = c.getLong(0),
+                            language = Language.fromCode(c.getString(1)),
+                            headword = c.getString(2),
+                            pos = PartOfSpeech.fromCode(c.stringOrNull(3)),
+                            preview = c.stringOrNull(6).orEmpty(),
+                        ),
+                    )
+                }
+            }
+        }
+        return scored.sortedWith(compareBy<Scored> { it.dist }.thenByDescending { it.freq })
+            .take(limit)
+            .map { it.result }
+    }
+
+    suspend fun topics(): List<TopicCount> = withContext(io) {
+        db.get().rawQuery(
+            """
+            SELECT topic, COUNT(*) AS cnt FROM entries
+            WHERE lang = 'tg' AND topic IS NOT NULL AND topic != ''
+            GROUP BY topic ORDER BY cnt DESC, topic ASC
+            """.trimIndent(),
+            null,
+        ).use { c -> c.mapRows { TopicCount(getString(0), getInt(1)) } }
+    }
+
+    suspend fun entriesByTopic(topic: String, mode: DictionaryMode): List<SearchResult> = withContext(io) {
+        db.get().rawQuery(
+            """
+            SELECT e.id, e.lang, e.headword, e.pos,
+                   (SELECT group_concat(h, ', ') FROM (
+                        SELECT t2.headword AS h
+                        FROM translations t JOIN entries t2 ON t2.id = t.to_id
+                        WHERE t.from_id = e.id AND t2.lang = ?
+                        ORDER BY t.position LIMIT 4)) AS preview
+            FROM entries e
+            WHERE e.lang = 'tg' AND e.topic = ?
+            ORDER BY e.frequency DESC, e.headword ASC
+            """.trimIndent(),
+            arrayOf(mode.partner.code, topic),
+        ).use { c ->
+            c.mapRows {
+                SearchResult(
+                    id = getLong(0),
+                    language = Language.fromCode(getString(1)),
+                    headword = getString(2),
+                    pos = PartOfSpeech.fromCode(stringOrNull(3)),
+                    preview = stringOrNull(4).orEmpty(),
+                )
+            }
+        }
+    }
 
     suspend fun entry(id: Long): Entry? = withContext(io) {
         db.get().rawQuery(

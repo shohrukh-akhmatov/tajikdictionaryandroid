@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -28,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import tj.tajikdictionary.R
 import tj.tajikdictionary.domain.model.DictionaryMode
 import tj.tajikdictionary.domain.model.Language
+import tj.tajikdictionary.domain.model.SearchMatchType
 import tj.tajikdictionary.ui.components.EmptyState
 import tj.tajikdictionary.ui.components.LanguageTag
 import tj.tajikdictionary.ui.components.ModeSwitcher
@@ -53,6 +56,7 @@ import tj.tajikdictionary.ui.components.WordRow
 fun SearchScreen(
     viewModel: SearchViewModel,
     onEntryClick: (Long) -> Unit,
+    onTopicClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val query by viewModel.query.collectAsStateWithLifecycle()
@@ -60,6 +64,7 @@ fun SearchScreen(
     val outcome by viewModel.outcome.collectAsStateWithLifecycle()
     val wordOfTheDay by viewModel.wordOfTheDay.collectAsStateWithLifecycle()
     val recent by viewModel.recent.collectAsStateWithLifecycle()
+    val topics by viewModel.topics.collectAsStateWithLifecycle()
     val keyboard = LocalSoftwareKeyboardController.current
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -110,6 +115,31 @@ fun SearchScreen(
                                 onClick = { onEntryClick(wotd.entry.id) },
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                             )
+                            Spacer(Modifier.height(12.dp))
+                        }
+                    }
+
+                    if (topics.isNotEmpty()) {
+                        item(key = "topics_header") {
+                            Text(
+                                stringResource(R.string.topics_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            )
+                        }
+                        item(key = "topics_row") {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                items(topics, key = { it.topic }) { item ->
+                                    AssistChip(
+                                        onClick = { onTopicClick(item.topic) },
+                                        label = { Text("${item.topic} (${item.count})") },
+                                    )
+                                }
+                            }
                             Spacer(Modifier.height(12.dp))
                         }
                     }
@@ -178,6 +208,27 @@ fun SearchScreen(
 
             else -> {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    if (outcome.matchType != SearchMatchType.DIRECT) {
+                        item(key = "fallback_banner") {
+                            val bannerText = when (outcome.matchType) {
+                                SearchMatchType.STEM -> stringResource(R.string.match_stem_hint, query.trim())
+                                SearchMatchType.FUZZY -> stringResource(R.string.match_fuzzy_hint)
+                                SearchMatchType.DIRECT -> ""
+                            }
+                            Surface(
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(
+                                    text = bannerText,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
+                            }
+                        }
+                    }
+
                     items(outcome.results, key = { it.id }) { row ->
                         WordRow(
                             language = row.language,

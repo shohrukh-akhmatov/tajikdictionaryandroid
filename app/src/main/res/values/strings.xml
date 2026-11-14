@@ -43,4 +43,7 @@
     <string name="settings_stats">Offline word counts</string>
     <string name="settings_report_mistake">Report a mistake / Suggest a word</string>
     <string name="settings_report_mistake_sub">Send feedback about a translation or missing word</string>
+    <string name="topics_title">Topics</string>
+    <string name="match_stem_hint">Showing base forms for “%1$s”</string>
+    <string name="match_fuzzy_hint">Showing closest spelling matches</string>
 </resources>

@@ -43,4 +43,7 @@
     <string name="settings_stats">Омори калимаҳо</string>
     <string name="settings_report_mistake">Хабар додан дар бораи хато</string>
     <string name="settings_report_mistake_sub">Дар бораи хато ё калимаи нав нависед</string>
+    <string name="topics_title">Мавзӯъҳо</string>
+    <string name="match_stem_hint">Шаклҳои асосӣ барои «%1$s»</string>
+    <string name="match_fuzzy_hint">Калимаҳои наздик ба имло нишон дода шуданд</string>
 </resources>

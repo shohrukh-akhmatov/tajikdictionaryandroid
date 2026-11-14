@@ -10,18 +10,23 @@ data class SearchResult(
     val preview: String,
 )
 
-/** Result of a search, including whether we suggest switching the mode. */
+enum class SearchMatchType { DIRECT, STEM, FUZZY }
+
+/** Result of a search, including whether we suggest switching the mode or used fallback matching. */
 data class SearchOutcome(
     val query: String,
     val results: List<SearchResult>,
     val searchedLanguages: Set<Language>,
     /** Non-null when the query looks like a language that is not part of the current mode. */
     val suggestedMode: DictionaryMode?,
+    val matchType: SearchMatchType = SearchMatchType.DIRECT,
 ) {
     companion object {
         val Empty = SearchOutcome("", emptyList(), emptySet(), null)
     }
 }
+
+data class TopicCount(val topic: String, val count: Int)
 
 data class Entry(
     val id: Long,

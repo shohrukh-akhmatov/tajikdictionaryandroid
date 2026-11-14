@@ -31,8 +31,10 @@ import tj.tajikdictionary.ui.detail.EntryDetailScreen
 import tj.tajikdictionary.ui.detail.EntryDetailViewModel
 import tj.tajikdictionary.ui.favorites.FavoritesScreen
 import tj.tajikdictionary.ui.history.HistoryScreen
+import android.net.Uri
 import tj.tajikdictionary.ui.search.SearchScreen
 import tj.tajikdictionary.ui.search.SearchViewModel
+import tj.tajikdictionary.ui.search.TopicEntriesScreen
 import tj.tajikdictionary.ui.settings.SettingsScreen
 
 private enum class TopTab(val route: String, val labelRes: Int, val icon: ImageVector) {
@@ -91,7 +93,24 @@ fun TajikDictionaryRoot(
                         initialQuery = initialQuery,
                     ),
                 )
-                SearchScreen(viewModel = vm, onEntryClick = openEntry)
+                SearchScreen(
+                    viewModel = vm,
+                    onEntryClick = openEntry,
+                    onTopicClick = { topic -> navController.navigate("topic/${Uri.encode(topic)}") },
+                )
+            }
+            composable(
+                route = "topic/{topic}",
+                arguments = listOf(navArgument("topic") { type = NavType.StringType }),
+            ) { entry ->
+                val topic = entry.arguments?.getString("topic") ?: return@composable
+                TopicEntriesScreen(
+                    topic = topic,
+                    dictionary = container.dictionary,
+                    settings = container.settings,
+                    onBack = { navController.popBackStack() },
+                    onEntryClick = openEntry,
+                )
             }
             composable(TopTab.SAVED.route) {
                 FavoritesScreen(userData = container.userData, onEntryClick = openEntry)

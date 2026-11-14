@@ -21,6 +21,7 @@ import tj.tajikdictionary.data.user.UserDataRepository
 import tj.tajikdictionary.domain.model.DictionaryMode
 import tj.tajikdictionary.domain.model.Entry
 import tj.tajikdictionary.domain.model.SearchOutcome
+import tj.tajikdictionary.domain.model.TopicCount
 
 data class WordOfTheDayUi(val entry: Entry, val preview: String)
 
@@ -39,6 +40,9 @@ class SearchViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, DictionaryMode.TJ_RU)
 
     val recent: StateFlow<List<HistoryEntity>> = userData.history
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val topics: StateFlow<List<TopicCount>> = flow { emit(dictionary.topics()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val wordOfTheDay: StateFlow<WordOfTheDayUi?> = mode.flatMapLatest { currentMode ->
