@@ -41,6 +41,7 @@ import tj.tajikdictionary.ui.settings.GrammarGuideScreen
 import tj.tajikdictionary.ui.settings.SettingsScreen
 import tj.tajikdictionary.ui.study.GameDeckSource
 import tj.tajikdictionary.ui.study.LearnScreen
+import tj.tajikdictionary.ui.study.PlacementTestScreen
 import tj.tajikdictionary.ui.study.StudyScreen
 import tj.tajikdictionary.ui.study.WordGameScreen
 
@@ -162,6 +163,7 @@ fun TajikDictionaryRoot(
                         val route = if (topic == null) "study" else "study?topic=${Uri.encode(topic)}"
                         navController.navigate(route)
                     },
+                    onOpenPlacement = { navController.navigate("placement") },
                 )
             }
             composable(TopTab.SAVED.route) {
@@ -181,6 +183,7 @@ fun TajikDictionaryRoot(
                     settings = container.settings,
                     onOpenGrammarGuide = { navController.navigate("grammar") },
                     onOpenStudy = { navController.navigate("study") },
+                    onOpenPlacement = { navController.navigate("placement") },
                 )
             }
             composable(
@@ -232,6 +235,14 @@ fun TajikDictionaryRoot(
             }
             composable("grammar") {
                 GrammarGuideScreen(onBack = { navController.popBackStack() })
+            }
+            composable("placement") {
+                PlacementTestScreen(
+                    dictionary = container.dictionary,
+                    userData = container.userData,
+                    settings = container.settings,
+                    onBack = { navController.popBackStack() },
+                )
             }
             composable(
                 route = "entry/{entryId}",

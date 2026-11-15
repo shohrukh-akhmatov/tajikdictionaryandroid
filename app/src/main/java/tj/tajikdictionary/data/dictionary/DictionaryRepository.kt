@@ -13,6 +13,7 @@ import tj.tajikdictionary.domain.model.Entry
 import tj.tajikdictionary.domain.model.EntryDetail
 import tj.tajikdictionary.domain.model.Example
 import tj.tajikdictionary.domain.model.Language
+import tj.tajikdictionary.domain.model.LexiconStats
 import tj.tajikdictionary.domain.model.PartOfSpeech
 import tj.tajikdictionary.domain.model.SearchMatchType
 import tj.tajikdictionary.domain.model.SearchOutcome
@@ -61,6 +62,19 @@ class DictionaryRepository(
                 }
             }
             if (direct.isNotEmpty()) {
+                // If every prefix hit is a much longer word (4+ extra chars) and a 1-edit typo match exists
+                // (e.g. "салам" vs prefix "саламандра" when user meant "салом"), surface the close typo match.
+                val onlyLongPrefixHits = key.length >= 5 && direct.all {
+                    TextNormalizer.searchKey(it.headword).length >= key.length + 4
+                }
+                if (onlyLongPrefixHits) {
+                    val closeFuzzy = fuzzySearch(key, languages, mode, limit = 20, maxDistanceOverride = 1)
+                    if (closeFuzzy.isNotEmpty()) {
+                        val fuzzyIds = closeFuzzy.map { it.id }.toHashSet()
+                        val combined = (closeFuzzy + direct.filter { it.id !in fuzzyIds }).take(limit)
+                        return@withContext SearchOutcome(rawQuery, combined, languages, null, SearchMatchType.FUZZY)
+                    }
+                }
                 return@withContext SearchOutcome(rawQuery, direct, languages, null, SearchMatchType.DIRECT)
             }
 
@@ -162,8 +176,9 @@ class DictionaryRepository(
         languages: Set<Language>,
         mode: DictionaryMode,
         limit: Int,
+        maxDistanceOverride: Int? = null,
     ): List<SearchResult> {
-        val maxDist = if (key.length >= 5) 2 else 1
+        val maxDist = maxDistanceOverride ?: if (key.length >= 5) 2 else 1
         val minLen = (key.length - maxDist).coerceAtLeast(2)
         val maxLen = key.length + maxDist
         val placeholders = languages.joinToString(",") { "?" }
@@ -179,7 +194,7 @@ class DictionaryRepository(
             WHERE e.lang IN ($placeholders)
               AND length(e.search_key) BETWEEN ? AND ?
             ORDER BY e.frequency DESC
-            LIMIT 400
+            LIMIT 1500
         """.trimIndent()
         val args = buildList {
             add(mode.partner.code)
@@ -329,10 +344,12 @@ class DictionaryRepository(
     suspend fun learningCandidates(
         topic: String? = null,
         mode: DictionaryMode,
+        maxFrequency: Int = 100,
         limit: Int = 450,
     ): List<WordCardCandidate> = withContext(io) {
         val partnerCol = if (mode.partner == Language.RUSSIAN) "ex.ru" else "ex.en"
         val topicClause = if (topic == null) "" else "AND e.topic = ?"
+        val freqClause = if (maxFrequency < 100) "AND e.frequency <= ?" else ""
         val sql = """
             SELECT e.id, e.lang, e.headword, e.pos, e.frequency, e.topic,
                    (SELECT group_concat(h, ', ') FROM (
@@ -343,13 +360,14 @@ class DictionaryRepository(
                    (SELECT ex.tg FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_tg,
                    (SELECT $partnerCol FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_partner
             FROM entries e
-            WHERE e.lang = 'tg' $topicClause
+            WHERE e.lang = 'tg' $topicClause $freqClause
             ORDER BY e.frequency DESC, e.id ASC
             LIMIT ?
         """.trimIndent()
         val args = buildList {
             add(mode.partner.code)
             if (topic != null) add(topic)
+            if (maxFrequency < 100) add(maxFrequency.toString())
             add(limit.toString())
         }.toTypedArray()
 
@@ -368,6 +386,71 @@ class DictionaryRepository(
                 )
             }
         }
+    }
+
+    /** Returns live headword counts across frequency tiers in `dictionary.sqlite`. */
+    suspend fun lexiconStats(): LexiconStats = withContext(io) {
+        val sql = """
+            SELECT COUNT(*),
+                   SUM(CASE WHEN frequency >= 90 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN frequency BETWEEN 80 AND 89 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN frequency BETWEEN 70 AND 79 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN frequency < 70 THEN 1 ELSE 0 END)
+            FROM entries
+            WHERE lang = 'tg'
+        """.trimIndent()
+        db.get().rawQuery(sql, null).use { c ->
+            if (c.moveToFirst()) {
+                LexiconStats(
+                    totalTajik = c.getInt(0),
+                    tier90Count = c.getInt(1),
+                    tier80Count = c.getInt(2),
+                    tier70Count = c.getInt(3),
+                    tierOtherCount = c.getInt(4),
+                )
+            } else {
+                LexiconStats.FALLBACK
+            }
+        }
+    }
+
+    /** Samples stratified Tajik entries across all 4 frequency tiers for the quick level placement test. */
+    suspend fun placementPool(mode: DictionaryMode): List<WordCardCandidate> = withContext(io) {
+        val ranges = listOf(90 to 100, 80 to 89, 70 to 79, 40 to 69)
+        val combined = ArrayList<WordCardCandidate>(100)
+        for ((lo, hi) in ranges) {
+            val sql = """
+                SELECT e.id, e.lang, e.headword, e.pos, e.frequency, e.topic,
+                       (SELECT group_concat(h, ', ') FROM (
+                            SELECT t2.headword AS h
+                            FROM translations t JOIN entries t2 ON t2.id = t.to_id
+                            WHERE t.from_id = e.id AND t2.lang = ?
+                            ORDER BY t.position LIMIT 2)) AS preview
+                FROM entries e
+                WHERE e.lang = 'tg' AND e.frequency BETWEEN ? AND ?
+                ORDER BY RANDOM()
+                LIMIT 25
+            """.trimIndent()
+            db.get().rawQuery(
+                sql,
+                arrayOf(mode.partner.code, lo.toString(), hi.toString()),
+            ).use { c ->
+                c.mapRows {
+                    WordCardCandidate(
+                        entryId = getLong(0),
+                        language = Language.fromCode(getString(1)),
+                        headword = getString(2),
+                        preview = stringOrNull(6).orEmpty(),
+                        pos = PartOfSpeech.fromCode(stringOrNull(3)),
+                        frequency = getInt(4),
+                        topic = stringOrNull(5),
+                        exampleTg = null,
+                        examplePartner = null,
+                    )
+                }.let { combined.addAll(it) }
+            }
+        }
+        combined
     }
 
     suspend fun learningCandidatesForIds(

@@ -61,6 +61,7 @@ fun SettingsScreen(
     settings: SettingsRepository,
     onOpenGrammarGuide: () -> Unit,
     onOpenStudy: () -> Unit,
+    onOpenPlacement: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val mode by settings.mode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
@@ -68,6 +69,8 @@ fun SettingsScreen(
     val speechRate by settings.speechRate.collectAsStateWithLifecycle(initialValue = 1.0f)
     val fontScale by settings.fontScale.collectAsStateWithLifecycle(initialValue = FontScaleSetting.MEDIUM)
     val dailyGoal by settings.dailyGoal.collectAsStateWithLifecycle(initialValue = 10)
+    val placementLevel by settings.placementLevel.collectAsStateWithLifecycle(initialValue = null)
+    val hasCompletedPlacement by settings.hasCompletedPlacement.collectAsStateWithLifecycle(initialValue = false)
     val info by produceState<DictionaryInfo?>(initialValue = null, dictionary) {
         value = dictionary.info()
     }
@@ -205,6 +208,23 @@ fun SettingsScreen(
             }
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
+                    ListItem(
+                        modifier = Modifier.clickable(onClick = onOpenPlacement),
+                        headlineContent = { Text(stringResource(R.string.placement_title)) },
+                        supportingContent = {
+                            Text(
+                                if (hasCompletedPlacement && placementLevel != null) {
+                                    stringResource(R.string.placement_current_level, placementLevel!!.code)
+                                } else {
+                                    stringResource(R.string.placement_settings_sub)
+                                },
+                            )
+                        },
+                        trailingContent = {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+                        },
+                    )
+                    HorizontalDivider(thickness = 0.5.dp)
                     ListItem(
                         modifier = Modifier.clickable(onClick = onOpenStudy),
                         headlineContent = { Text(stringResource(R.string.study_flashcards)) },

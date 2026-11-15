@@ -4,16 +4,87 @@ import tj.tajikdictionary.core.text.TextNormalizer
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.TextStyle
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.roundToInt
 
 enum class ChallengeKind {
     MULTIPLE_CHOICE,
     WORD_BUILDER,
     TYPING,
 }
+
+/** CEFR-aligned Tajik vocabulary proficiency tiers. */
+enum class CefrLevel(
+    val code: String,
+    val titleResKey: String,
+    val recommendedCeilingFrequency: Int,
+    val baselineKnownWords: Int,
+) {
+    A0("A0", "cefr_a0", 100, 0),
+    A1("A1", "cefr_a1", 90, 150),
+    A2("A2", "cefr_a2", 82, 500),
+    B1("B1", "cefr_b1", 72, 1500),
+    B2("B2", "cefr_b2", 62, 3200),
+}
+
+data class LexiconStats(
+    val totalTajik: Int,
+    val tier90Count: Int,
+    val tier80Count: Int,
+    val tier70Count: Int,
+    val tierOtherCount: Int,
+) {
+    companion object {
+        val FALLBACK = LexiconStats(
+            totalTajik = 16_358,
+            tier90Count = 290,
+            tier80Count = 1_474,
+            tier70Count = 4_536,
+            tierOtherCount = 10_058,
+        )
+    }
+}
+
+data class FrequencyTierProgress(
+    val id: String,
+    val labelResKey: String,
+    val knownCount: Int,
+    val totalCount: Int,
+)
+
+data class DailyActivityPoint(
+    val dateKey: String,
+    val shortLabel: String,
+    val wordsReviewed: Int,
+    val studySeconds: Int,
+    val metGoal: Boolean,
+)
+
+data class PlacementQuestion(
+    val candidate: WordCardCandidate,
+    val tier: Int,
+    val choices: List<String>,
+)
+
+data class PlacementAnswer(
+    val question: PlacementQuestion,
+    val isCorrect: Boolean,
+)
+
+data class PlacementResult(
+    val cefrLevel: CefrLevel,
+    val correctCount: Int,
+    val totalCount: Int,
+    val estimatedKnownWords: Int,
+    val textRecognitionPercent: Double,
+    val knownEntryIds: List<Long>,
+    val focusEntryIds: List<Long>,
+)
 
 data class WordCardCandidate(
     val entryId: Long,
@@ -44,6 +115,8 @@ data class DailyStudySnapshot(
     val wordsLearned: Int,
     val xpEarned: Int,
     val roundsCompleted: Int,
+    val studySeconds: Int = 0,
+    val correctReviews: Int = 0,
 )
 
 data class GameRoundItem(
@@ -77,6 +150,10 @@ data class GamificationSummary(
     val xpForNextLevel: Int,
     val currentStreakDays: Int,
     val longestStreakDays: Int,
+    val activeDaysCount: Int,
+    val totalStudySeconds: Int,
+    val totalReviews: Int,
+    val overallAccuracyPercent: Int,
     val todayReviewed: Int,
     val todayLearned: Int,
     val dailyGoal: Int,
@@ -84,6 +161,12 @@ data class GamificationSummary(
     val learningCount: Int,
     val masteredCount: Int,
     val dueNowCount: Int,
+    val estimatedKnownWords: Int,
+    val textRecognitionPercent: Double,
+    val cefrLevel: CefrLevel,
+    val totalLexiconCount: Int,
+    val tierBreakdown: List<FrequencyTierProgress>,
+    val recent7Days: List<DailyActivityPoint>,
     val badges: List<AchievementBadge>,
 )
 
@@ -105,11 +188,19 @@ object WordGameEngine {
         return 0.9.pow(safeElapsed / safeStability)
     }
 
+    /** Zipf-calibrated percentage of everyday Tajik text recognized for `effectiveKnownWords`. */
+    fun textRecognitionPercent(effectiveKnownWords: Double): Double {
+        if (effectiveKnownWords <= 0.0) return 0.0
+        val pct = 98.5 * (1.0 - 1.0 / (1.0 + effectiveKnownWords / 140.0).pow(0.68))
+        return min(99.0, max(0.0, pct))
+    }
+
     fun buildRoundQueue(
         candidates: List<WordCardCandidate>,
         progressById: Map<Long, WordProgressSnapshot>,
         nowMs: Long = System.currentTimeMillis(),
         roundSize: Int = DEFAULT_ROUND_SIZE,
+        targetMaxFrequency: Int? = null,
     ): List<WordCardCandidate> {
         val usable = candidates.filter { it.preview.isNotBlank() }
         if (usable.isEmpty() || roundSize <= 0) return emptyList()
@@ -131,13 +222,31 @@ object WordGameEngine {
                 .thenByDescending { it.first.frequency },
         ).map { it.first }
 
-        val newOrdered = active.filter { candidate ->
+        val unstudied = active.filter { candidate ->
             val p = progressById[candidate.entryId]
             p == null || p.lastReviewedAtMs == null
-        }.sortedWith(
-            compareByDescending<WordCardCandidate> { it.frequency }
-                .thenBy { it.entryId },
-        )
+        }
+
+        val newOrdered = if (targetMaxFrequency != null && targetMaxFrequency < 100) {
+            val atOrBelow = unstudied
+                .filter { it.frequency <= targetMaxFrequency }
+                .sortedWith(
+                    compareByDescending<WordCardCandidate> { it.frequency }
+                        .thenBy { it.entryId },
+                )
+            val above = unstudied
+                .filter { it.frequency > targetMaxFrequency }
+                .sortedWith(
+                    compareByDescending<WordCardCandidate> { it.frequency }
+                        .thenBy { it.entryId },
+                )
+            atOrBelow + above
+        } else {
+            unstudied.sortedWith(
+                compareByDescending<WordCardCandidate> { it.frequency }
+                    .thenBy { it.entryId },
+            )
+        }
 
         val picked = ArrayList<WordCardCandidate>(roundSize)
         val pickedIds = HashSet<Long>()
@@ -358,6 +467,88 @@ object WordGameEngine {
 
     fun reinsertIndex(remainingCount: Int): Int = min(3, max(0, remainingCount))
 
+    fun buildPlacementQuestions(pool: List<WordCardCandidate>): List<PlacementQuestion> {
+        val usable = pool.filter { it.preview.isNotBlank() }
+        val tiers = listOf(
+            1 to (90..100),
+            2 to (80..89),
+            3 to (70..79),
+            4 to (40..69),
+        )
+
+        val questions = ArrayList<PlacementQuestion>(12)
+        val usedIds = HashSet<Long>()
+
+        for ((tier, range) in tiers) {
+            val tierWords = usable
+                .filter { it.frequency in range && it.entryId !in usedIds }
+                .shuffled()
+            for (candidate in tierWords.take(3)) {
+                usedIds += candidate.entryId
+                val seenMeanings = HashSet<String>().apply { add(candidate.preview.lowercase()) }
+                val distractors = ArrayList<String>(3)
+                for (other in usable.shuffled()) {
+                    if (other.entryId == candidate.entryId) continue
+                    val key = other.preview.lowercase()
+                    if (seenMeanings.add(key)) {
+                        distractors += other.preview
+                        if (distractors.size == 3) break
+                    }
+                }
+                val choices = (listOf(candidate.preview) + distractors).shuffled()
+                questions += PlacementQuestion(
+                    candidate = candidate,
+                    tier = tier,
+                    choices = choices,
+                )
+            }
+        }
+        return questions
+    }
+
+    fun evaluatePlacement(answers: List<PlacementAnswer>): PlacementResult {
+        fun passedTier(tier: Int): Boolean {
+            val group = answers.filter { it.question.tier == tier }
+            if (group.isEmpty()) return false
+            val right = group.count { it.isCorrect }
+            return right >= max(2, (group.size + 1) / 2)
+        }
+
+        val level = when {
+            passedTier(1) && passedTier(2) && passedTier(3) && passedTier(4) -> CefrLevel.B2
+            passedTier(1) && passedTier(2) && passedTier(3) -> CefrLevel.B1
+            passedTier(1) && passedTier(2) -> CefrLevel.A2
+            passedTier(1) -> CefrLevel.A1
+            else -> CefrLevel.A0
+        }
+
+        val correctCount = answers.count { it.isCorrect }
+        val knownIds = answers.filter { it.isCorrect }.map { it.question.candidate.entryId }
+        val focusIds = answers.filterNot { it.isCorrect }.map { it.question.candidate.entryId }
+        val estimatedWords = level.baselineKnownWords + knownIds.size
+        val coverage = textRecognitionPercent(estimatedWords.toDouble())
+
+        return PlacementResult(
+            cefrLevel = level,
+            correctCount = correctCount,
+            totalCount = answers.size,
+            estimatedKnownWords = estimatedWords,
+            textRecognitionPercent = coverage,
+            knownEntryIds = knownIds,
+            focusEntryIds = focusIds,
+        )
+    }
+
+    fun formatStudyDuration(seconds: Int): String {
+        val safe = max(0, seconds)
+        if (safe < 60) return "${safe}s"
+        val minutes = safe / 60
+        if (minutes < 60) return "${minutes}m"
+        val hours = minutes / 60
+        val remMin = minutes % 60
+        return if (remMin > 0) "${hours}h ${remMin}m" else "${hours}h"
+    }
+
     fun dateKey(
         nowMs: Long = System.currentTimeMillis(),
         zoneId: ZoneId = ZoneId.systemDefault(),
@@ -367,8 +558,12 @@ object WordGameEngine {
         progress: List<WordProgressSnapshot>,
         logs: List<DailyStudySnapshot>,
         dailyGoal: Int,
+        lexiconStats: LexiconStats = LexiconStats.FALLBACK,
+        placementLevel: CefrLevel? = null,
+        placementBaselineWords: Int = 0,
         nowMs: Long = System.currentTimeMillis(),
         zoneId: ZoneId = ZoneId.systemDefault(),
+        locale: Locale = Locale.getDefault(),
     ): GamificationSummary {
         val totalXp = logs.sumOf { it.xpEarned }
         val levelStep = 100
@@ -404,6 +599,14 @@ object WordGameEngine {
         val todayLog = logs.firstOrNull { it.dateKey == todayKey }
         val todayReviewed = todayLog?.wordsReviewed ?: 0
         val todayLearned = todayLog?.wordsLearned ?: 0
+        val totalStudySeconds = logs.sumOf { it.studySeconds }
+        val totalReviews = logs.sumOf { it.wordsReviewed }
+        val totalCorrect = logs.sumOf { it.correctReviews }
+        val accuracyPct = if (totalReviews > 0) {
+            ((totalCorrect.toDouble() / totalReviews.toDouble()) * 100.0).roundToInt()
+        } else {
+            100
+        }
 
         val encountered = progress.count { it.lastReviewedAtMs != null || it.isKnownSkipped }
         val mastered = progress.count { it.masteryStage >= 4 || it.isKnownSkipped }
@@ -411,7 +614,65 @@ object WordGameEngine {
         val dueNow = progress.count {
             !it.isKnownSkipped && it.lastReviewedAtMs != null && it.nextReviewAtMs <= nowMs
         }
-        val totalReviews = logs.sumOf { it.wordsReviewed }
+
+        val weightedActiveKnown = progress.sumOf { p ->
+            when {
+                p.isKnownSkipped || p.masteryStage >= 4 -> 1.0
+                p.masteryStage >= 2 -> 0.75
+                p.masteryStage == 1 -> 0.45
+                p.lastReviewedAtMs != null -> 0.2
+                else -> 0.0
+            }
+        }
+        val effectiveKnown = placementBaselineWords.toDouble() + weightedActiveKnown
+        val estimatedKnownWords = effectiveKnown.roundToInt()
+        val coveragePct = textRecognitionPercent(effectiveKnown)
+
+        val vocabCefr = when {
+            estimatedKnownWords >= 3000 -> CefrLevel.B2
+            estimatedKnownWords >= 1400 -> CefrLevel.B1
+            estimatedKnownWords >= 450 -> CefrLevel.A2
+            estimatedKnownWords >= 120 -> CefrLevel.A1
+            else -> CefrLevel.A0
+        }
+        val cefrLevel = if (placementLevel != null && placementLevel.ordinal > vocabCefr.ordinal) {
+            placementLevel
+        } else {
+            vocabCefr
+        }
+
+        var remainingCredit = estimatedKnownWords
+        val t90Known = min(lexiconStats.tier90Count, remainingCredit)
+        remainingCredit = max(0, remainingCredit - t90Known)
+        val t80Known = min(lexiconStats.tier80Count, remainingCredit)
+        remainingCredit = max(0, remainingCredit - t80Known)
+        val t70Known = min(lexiconStats.tier70Count, remainingCredit)
+        remainingCredit = max(0, remainingCredit - t70Known)
+        val tOtherKnown = min(lexiconStats.tierOtherCount, remainingCredit)
+
+        val tiers = listOf(
+            FrequencyTierProgress("t90", "tier_90_label", t90Known, lexiconStats.tier90Count),
+            FrequencyTierProgress("t80", "tier_80_label", t80Known, lexiconStats.tier80Count),
+            FrequencyTierProgress("t70", "tier_70_label", t70Known, lexiconStats.tier70Count),
+            FrequencyTierProgress("t40", "tier_40_label", tOtherKnown, lexiconStats.tierOtherCount),
+        )
+
+        val logByKey = logs.associateBy { it.dateKey }
+        val safeGoal = max(1, dailyGoal)
+        val recent7 = (6 downTo 0).map { offset ->
+            val day = today.minusDays(offset.toLong())
+            val key = day.toString()
+            val log = logByKey[key]
+            val reviewed = log?.wordsReviewed ?: 0
+            val label = day.dayOfWeek.getDisplayName(TextStyle.SHORT, locale).take(2)
+            DailyActivityPoint(
+                dateKey = key,
+                shortLabel = label,
+                wordsReviewed = reviewed,
+                studySeconds = log?.studySeconds ?: 0,
+                metGoal = reviewed >= safeGoal,
+            )
+        }
 
         val badges = listOf(
             AchievementBadge("first_word", "badge_first_word", encountered >= 1),
@@ -429,13 +690,23 @@ object WordGameEngine {
             xpForNextLevel = levelStep,
             currentStreakDays = currentStreak,
             longestStreakDays = longestStreak,
+            activeDaysCount = activeDates.size,
+            totalStudySeconds = totalStudySeconds,
+            totalReviews = totalReviews,
+            overallAccuracyPercent = accuracyPct,
             todayReviewed = todayReviewed,
             todayLearned = todayLearned,
-            dailyGoal = max(1, dailyGoal),
+            dailyGoal = safeGoal,
             encounteredCount = encountered,
             learningCount = learning,
             masteredCount = mastered,
             dueNowCount = dueNow,
+            estimatedKnownWords = estimatedKnownWords,
+            textRecognitionPercent = coveragePct,
+            cefrLevel = cefrLevel,
+            totalLexiconCount = lexiconStats.totalTajik,
+            tierBreakdown = tiers,
+            recent7Days = recent7,
             badges = badges,
         )
     }

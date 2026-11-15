@@ -61,6 +61,8 @@ data class DailyStatsEntity(
     val wordsLearned: Int,
     val xpEarned: Int,
     val roundsCompleted: Int,
+    val studySeconds: Int = 0,
+    val correctReviews: Int = 0,
 )
 
 @Dao
@@ -127,7 +129,7 @@ interface DailyStatsDao {
 
 @Database(
     entities = [FavoriteEntity::class, HistoryEntity::class, FlashcardEntity::class, DailyStatsEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class UserDatabase : RoomDatabase() {
@@ -180,9 +182,16 @@ abstract class UserDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `daily_stats` ADD COLUMN `studySeconds` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `daily_stats` ADD COLUMN `correctReviews` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun create(context: Context): UserDatabase =
             Room.databaseBuilder(context, UserDatabase::class.java, "user.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }

@@ -1,6 +1,9 @@
 package tj.tajikdictionary.ui.study
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,21 +13,26 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.filled.TrackChanges
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -46,7 +54,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -56,9 +68,11 @@ import tj.tajikdictionary.data.dictionary.DictionaryRepository
 import tj.tajikdictionary.data.settings.SettingsRepository
 import tj.tajikdictionary.data.user.UserDataRepository
 import tj.tajikdictionary.data.user.toSnapshot
-import tj.tajikdictionary.domain.model.DailyStudySnapshot
+import tj.tajikdictionary.domain.model.LexiconStats
 import tj.tajikdictionary.domain.model.TopicCount
 import tj.tajikdictionary.domain.model.WordGameEngine
+import java.util.Locale
+import kotlin.math.max
 import kotlin.math.min
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,25 +83,34 @@ fun LearnScreen(
     settings: SettingsRepository,
     onStartGame: (GameDeckSource) -> Unit,
     onOpenFlashcards: (String?) -> Unit,
+    onOpenPlacement: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val flashcards by userData.flashcards.collectAsStateWithLifecycle(initialValue = emptyList())
     val dailyStats by userData.dailyStats.collectAsStateWithLifecycle(initialValue = emptyList())
     val favorites by userData.favorites.collectAsStateWithLifecycle(initialValue = emptyList())
     val dailyGoal by settings.dailyGoal.collectAsStateWithLifecycle(initialValue = 10)
+    val placementLevel by settings.placementLevel.collectAsStateWithLifecycle(initialValue = null)
+    val placementBaselineWords by settings.placementBaselineWords.collectAsStateWithLifecycle(initialValue = 0)
+    val hasCompletedPlacement by settings.hasCompletedPlacement.collectAsStateWithLifecycle(initialValue = false)
+
     val topics by produceState<List<TopicCount>>(initialValue = emptyList(), dictionary) {
         value = dictionary.topics()
+    }
+    val lexiconStats by produceState(initialValue = LexiconStats.FALLBACK, dictionary) {
+        value = dictionary.lexiconStats()
     }
 
     var selectedSource by remember { mutableStateOf<GameDeckSource>(GameDeckSource.SmartMix) }
 
-    val summary = remember(flashcards, dailyStats, dailyGoal) {
+    val summary = remember(flashcards, dailyStats, dailyGoal, lexiconStats, placementLevel, placementBaselineWords) {
         WordGameEngine.computeSummary(
             progress = flashcards.map { it.toSnapshot() },
-            logs = dailyStats.map {
-                DailyStudySnapshot(it.dateKey, it.wordsReviewed, it.wordsLearned, it.xpEarned, it.roundsCompleted)
-            },
+            logs = dailyStats.map { it.toSnapshot() },
             dailyGoal = dailyGoal,
+            lexiconStats = lexiconStats,
+            placementLevel = placementLevel,
+            placementBaselineWords = placementBaselineWords,
         )
     }
 
@@ -112,6 +135,94 @@ fun LearnScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // Lingvist-style Text Recognition % + CEFR Placement Card
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        val primaryColor = MaterialTheme.colorScheme.primary
+                        val trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        Box(
+                            modifier = Modifier.size(82.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val strokeWidth = 9.dp.toPx()
+                                drawArc(
+                                    color = trackColor,
+                                    startAngle = 0f,
+                                    sweepAngle = 360f,
+                                    useCenter = false,
+                                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                                )
+                                drawArc(
+                                    color = primaryColor,
+                                    startAngle = -90f,
+                                    sweepAngle = (summary.textRecognitionPercent.toFloat() / 100f).coerceIn(0f, 1f) * 360f,
+                                    useCenter = false,
+                                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    String.format(Locale.US, "%.0f%%", summary.textRecognitionPercent),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    summary.cefrLevel.code,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(
+                                stringResource(R.string.hero_everyday_recognized),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                "${summary.cefrLevel.code} · ${cefrTitle(summary.cefrLevel)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                stringResource(R.string.hero_words_of_total, summary.estimatedKnownWords, summary.totalLexiconCount),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = onOpenPlacement,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            if (hasCompletedPlacement) {
+                                stringResource(R.string.placement_cta_retake)
+                            } else {
+                                stringResource(R.string.placement_cta_check)
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+                    }
+                }
+            }
+
             // Streak & Level Card
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -124,7 +235,7 @@ fun LearnScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
@@ -141,17 +252,18 @@ fun LearnScreen(
                                 )
                                 Text(
                                     stringResource(R.string.game_best_streak, summary.longestStreakDays),
-                                    style = MaterialTheme.typography.labelSmall,
+                                    style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
+
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
                                 "Lv. ${summary.level} · $levelTitle",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
                             )
                             Text(
                                 "${summary.totalXp} XP",
@@ -163,10 +275,11 @@ fun LearnScreen(
 
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(stringResource(R.string.game_todays_goal), style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(R.string.game_todays_goal), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(
                                 "${summary.todayReviewed} / ${summary.dailyGoal}",
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (summary.todayReviewed >= summary.dailyGoal) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.SemiBold,
                             )
                         }
@@ -178,16 +291,8 @@ fun LearnScreen(
 
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(
-                                stringResource(R.string.game_level_progress),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                "${summary.xpInCurrentLevel} / ${summary.xpForNextLevel} XP",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Text(stringResource(R.string.game_level_progress), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${summary.xpInCurrentLevel} / ${summary.xpForNextLevel} XP", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         LinearProgressIndicator(
                             progress = { summary.xpInCurrentLevel.toFloat() / summary.xpForNextLevel.toFloat() },
@@ -258,10 +363,10 @@ fun LearnScreen(
                             }
                         }
                         items(topics, key = { it.topic }) { item ->
-                            val target = GameDeckSource.Topic(item.topic)
+                            val topicSource = GameDeckSource.Topic(item.topic)
                             FilterChip(
-                                selected = selectedSource == target,
-                                onClick = { selectedSource = target },
+                                selected = selectedSource == topicSource,
+                                onClick = { selectedSource = topicSource },
                                 label = { Text(item.topic.replaceFirstChar { it.uppercase() }) },
                             )
                         }
@@ -288,7 +393,108 @@ fun LearnScreen(
                 }
             }
 
-            // Vocabulary Coverage Card
+            // Study Analytics Card (Words known, Study time, Active days, Accuracy + 7-day chart)
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.analytics_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AnalyticsTile(
+                            value = "${summary.estimatedKnownWords}",
+                            label = stringResource(R.string.analytics_words_known),
+                            icon = Icons.AutoMirrored.Filled.MenuBook,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        AnalyticsTile(
+                            value = WordGameEngine.formatStudyDuration(summary.totalStudySeconds),
+                            label = stringResource(R.string.analytics_time_studied),
+                            icon = Icons.Filled.Schedule,
+                            color = Color(0xFF7B1FA2),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AnalyticsTile(
+                            value = "${summary.activeDaysCount}",
+                            label = stringResource(R.string.analytics_active_days),
+                            icon = Icons.Filled.CalendarMonth,
+                            color = Color(0xFFE65100),
+                            modifier = Modifier.weight(1f),
+                        )
+                        AnalyticsTile(
+                            value = "${summary.overallAccuracyPercent}%",
+                            label = stringResource(R.string.analytics_reviews_count, summary.totalReviews),
+                            icon = Icons.Filled.TrackChanges,
+                            color = Color(0xFF2E7D32),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+
+                    // 7-day bar chart
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            stringResource(R.string.analytics_last_7_days),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        val maxCount = max(
+                            summary.dailyGoal,
+                            summary.recent7Days.maxOfOrNull { it.wordsReviewed } ?: 1,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().height(92.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.Bottom,
+                        ) {
+                            summary.recent7Days.forEach { day ->
+                                val fraction = max(0.08f, day.wordsReviewed.toFloat() / max(1, maxCount).toFloat())
+                                val barColor = when {
+                                    day.metGoal -> Color(0xFF2E7D32)
+                                    day.wordsReviewed > 0 -> MaterialTheme.colorScheme.primary
+                                    else -> MaterialTheme.colorScheme.surfaceVariant
+                                }
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Bottom,
+                                ) {
+                                    if (day.wordsReviewed > 0) {
+                                        Text(
+                                            "${day.wordsReviewed}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Spacer(Modifier.height(2.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .width(18.dp)
+                                            .height((52.dp * fraction))
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(barColor),
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        day.shortLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Vocabulary Progress & Frequency Tiers
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -307,22 +513,29 @@ fun LearnScreen(
                         VocabCountTile(summary.learningCount, stringResource(R.string.game_learning), Color(0xFFE65100), Modifier.weight(1f))
                         VocabCountTile(summary.masteredCount, stringResource(R.string.game_mastered), Color(0xFF2E7D32), Modifier.weight(1f))
                     }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(
-                            stringResource(R.string.game_lexicon_coverage),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            "${summary.encounteredCount} / 8,041",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+
+                    summary.tierBreakdown.forEach { tier ->
+                        val tierTitle = when (tier.id) {
+                            "t90" -> stringResource(R.string.tier_90_label)
+                            "t80" -> stringResource(R.string.tier_80_label)
+                            "t70" -> stringResource(R.string.tier_70_label)
+                            else -> stringResource(R.string.tier_40_label)
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(tierTitle, style = MaterialTheme.typography.labelSmall)
+                                Text(
+                                    "${tier.knownCount} / ${tier.totalCount}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            LinearProgressIndicator(
+                                progress = { (tier.knownCount.toFloat() / max(1, tier.totalCount).toFloat()).coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
-                    LinearProgressIndicator(
-                        progress = { (summary.encounteredCount.toFloat() / 8041f).coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
                 }
             }
 
@@ -369,6 +582,33 @@ fun LearnScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnalyticsTile(
+    value: String,
+    label: String,
+    icon: ImageVector,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        color = color.copy(alpha = 0.09f),
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+            Column {
+                Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
         }
     }

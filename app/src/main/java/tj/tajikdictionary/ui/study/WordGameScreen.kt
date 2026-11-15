@@ -78,10 +78,10 @@ import tj.tajikdictionary.data.user.UserDataRepository
 import tj.tajikdictionary.data.user.toSnapshot
 import tj.tajikdictionary.domain.model.AnswerCheckResult
 import tj.tajikdictionary.domain.model.ChallengeKind
-import tj.tajikdictionary.domain.model.DailyStudySnapshot
 import tj.tajikdictionary.domain.model.DictionaryMode
 import tj.tajikdictionary.domain.model.GameRoundItem
 import tj.tajikdictionary.domain.model.Language
+import tj.tajikdictionary.domain.model.WordCardCandidate
 import tj.tajikdictionary.domain.model.WordGameEngine
 import tj.tajikdictionary.ui.components.EmptyState
 import tj.tajikdictionary.ui.components.TajikLettersRow
@@ -108,6 +108,10 @@ fun WordGameScreen(
     val speechRate by settings.speechRate.collectAsStateWithLifecycle(initialValue = 1.0f)
     val fontScale by settings.fontScale.collectAsStateWithLifecycle(initialValue = FontScaleSetting.MEDIUM)
     val dailyGoal by settings.dailyGoal.collectAsStateWithLifecycle(initialValue = 10)
+    val placementLevel by settings.placementLevel.collectAsStateWithLifecycle(initialValue = null)
+    val placementCeilingFreq by settings.placementCeilingFreq.collectAsStateWithLifecycle(initialValue = 100)
+    val placementBaselineWords by settings.placementBaselineWords.collectAsStateWithLifecycle(initialValue = 0)
+    val hasCompletedPlacement by settings.hasCompletedPlacement.collectAsStateWithLifecycle(initialValue = false)
     val flashcards by userData.flashcards.collectAsStateWithLifecycle(initialValue = emptyList())
     val dailyStats by userData.dailyStats.collectAsStateWithLifecycle(initialValue = emptyList())
 
@@ -168,8 +172,38 @@ fun WordGameScreen(
         newlyLearnedInRound = 0
         resetCardInputs()
 
-        val pool = when (source) {
-            GameDeckSource.SmartMix -> dictionary.learningCandidates(topic = null, mode = mode, limit = 450)
+        val progressEntities = userData.flashcards.first()
+        val progressMap = progressEntities.associate { it.entryId to it.toSnapshot() }
+        val ceilingFreq = if (hasCompletedPlacement) placementCeilingFreq else 100
+        val pool: List<WordCardCandidate> = when (source) {
+            GameDeckSource.SmartMix -> {
+                val frontierPool = dictionary.learningCandidates(
+                    topic = null,
+                    mode = mode,
+                    maxFrequency = ceilingFreq,
+                    limit = 450,
+                )
+                val activeIds = progressEntities
+                    .filter { !it.isKnownSkipped && it.lastReviewedAt != null }
+                    .map { it.entryId }
+                val activeCandidates = dictionary.learningCandidatesForIds(activeIds, mode)
+                val seen = HashSet<Long>()
+                val merged = ArrayList<WordCardCandidate>(activeCandidates.size + frontierPool.size)
+                for (item in activeCandidates + frontierPool) {
+                    if (seen.add(item.entryId)) {
+                        merged += item
+                    }
+                }
+                if (merged.size < WordGameEngine.DEFAULT_ROUND_SIZE && ceilingFreq < 100) {
+                    for (item in dictionary.learningCandidates(topic = null, mode = mode, maxFrequency = 100, limit = 200)) {
+                        if (seen.add(item.entryId)) {
+                            merged += item
+                        }
+                    }
+                }
+                merged
+            }
+
             is GameDeckSource.Topic -> dictionary.learningCandidates(topic = source.topic, mode = mode, limit = 450)
             GameDeckSource.Saved -> {
                 val favIds = userData.favorites.first().map { it.entryId }
@@ -177,11 +211,11 @@ fun WordGameScreen(
             }
         }
         val fallback = dictionary.topTajikHeadwords(60)
-        val progressMap = userData.flashcards.first().associate { it.entryId to it.toSnapshot() }
         val selected = WordGameEngine.buildRoundQueue(
             candidates = pool,
             progressById = progressMap,
             roundSize = WordGameEngine.DEFAULT_ROUND_SIZE,
+            targetMaxFrequency = if (source == GameDeckSource.SmartMix) ceilingFreq else null,
         )
         val items = WordGameEngine.makeRoundItems(
             selected = selected,
@@ -392,19 +426,13 @@ fun WordGameScreen(
             }
 
             roundFinished || queue.isEmpty() -> {
-                val summary = remember(flashcards, dailyStats, dailyGoal) {
+                val summary = remember(flashcards, dailyStats, dailyGoal, placementLevel, placementBaselineWords) {
                     WordGameEngine.computeSummary(
                         progress = flashcards.map { it.toSnapshot() },
-                        logs = dailyStats.map {
-                            DailyStudySnapshot(
-                                it.dateKey,
-                                it.wordsReviewed,
-                                it.wordsLearned,
-                                it.xpEarned,
-                                it.roundsCompleted,
-                            )
-                        },
+                        logs = dailyStats.map { it.toSnapshot() },
                         dailyGoal = dailyGoal,
+                        placementLevel = placementLevel,
+                        placementBaselineWords = placementBaselineWords,
                     )
                 }
                 val accuracy = if (totalAttempts > 0) {
@@ -825,7 +853,7 @@ fun WordGameScreen(
 }
 
 @Composable
-private fun SummaryStatTile(value: String, label: String, modifier: Modifier = Modifier) {
+internal fun SummaryStatTile(value: String, label: String, modifier: Modifier = Modifier) {
     ElevatedCard(modifier = modifier) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 8.dp),
