@@ -5,13 +5,19 @@ import tj.tajikdictionary.domain.model.FlashcardScheduler
 import tj.tajikdictionary.domain.model.FlashcardState
 import tj.tajikdictionary.domain.model.Language
 import tj.tajikdictionary.domain.model.ReviewRating
+import tj.tajikdictionary.domain.model.WordCardCandidate
+import tj.tajikdictionary.domain.model.WordGameEngine
+import tj.tajikdictionary.domain.model.WordProgressSnapshot
+import kotlin.math.max
+import kotlin.math.roundToInt
 
-/** Favorites + history + flashcard progress on top of [UserDatabase]. */
+/** Favorites + history + flashcard & game progress on top of [UserDatabase]. */
 class UserDataRepository(private val db: UserDatabase) {
 
     val favorites: Flow<List<FavoriteEntity>> = db.favorites().observeAll()
     val history: Flow<List<HistoryEntity>> = db.history().observeRecent(HistoryDao.MAX_HISTORY)
     val flashcards: Flow<List<FlashcardEntity>> = db.flashcards().observeAll()
+    val dailyStats: Flow<List<DailyStatsEntity>> = db.dailyStats().observeAll()
 
     fun isFavorite(entryId: Long): Flow<Boolean> = db.favorites().observeIsFavorite(entryId)
 
@@ -64,7 +70,112 @@ class UserDataRepository(private val db: UserDatabase) {
                 intervalDays = nextState.intervalDays,
                 easeFactor = nextState.easeFactor,
                 nextReviewAt = nextDue,
+                masteryStage = existing?.masteryStage ?: if (rating == ReviewRating.AGAIN) 0 else 1,
+                stabilityDays = existing?.stabilityDays ?: nextState.intervalDays.toDouble(),
+                lapses = existing?.lapses ?: if (rating == ReviewRating.AGAIN) 1 else 0,
+                lastReviewedAt = now,
+                isKnownSkipped = existing?.isKnownSkipped ?: false,
+            ),
+        )
+    }
+
+    suspend fun recordGameReview(
+        card: WordCardCandidate,
+        isCorrect: Boolean,
+        usedHintOrNearMiss: Boolean,
+        responseMs: Long,
+        wasRetriedInRound: Boolean,
+    ): Pair<Int, Boolean> {
+        val now = System.currentTimeMillis()
+        val existing = db.flashcards().get(card.entryId)
+        val snapshot = existing?.toSnapshot()
+        val eval = WordGameEngine.evaluateAnswer(
+            existing = snapshot,
+            entryId = card.entryId,
+            isCorrect = isCorrect,
+            usedHintOrNearMiss = usedHintOrNearMiss,
+            responseMs = responseMs,
+            wasRetriedInRound = wasRetriedInRound,
+            nowMs = now,
+        )
+
+        db.flashcards().upsert(
+            FlashcardEntity(
+                entryId = card.entryId,
+                lang = card.language.code,
+                headword = card.headword,
+                preview = card.preview,
+                repetitions = eval.updated.repetitions,
+                intervalDays = max(1, eval.updated.stabilityDays.roundToInt()),
+                easeFactor = existing?.easeFactor ?: 2.5,
+                nextReviewAt = eval.updated.nextReviewAtMs,
+                masteryStage = eval.updated.masteryStage,
+                stabilityDays = eval.updated.stabilityDays,
+                lapses = eval.updated.lapses,
+                lastReviewedAt = eval.updated.lastReviewedAtMs,
+                isKnownSkipped = false,
+            ),
+        )
+
+        val dateKey = WordGameEngine.dateKey(now)
+        val today = db.dailyStats().get(dateKey)
+        db.dailyStats().upsert(
+            DailyStatsEntity(
+                dateKey = dateKey,
+                wordsReviewed = (today?.wordsReviewed ?: 0) + 1,
+                wordsLearned = (today?.wordsLearned ?: 0) + if (eval.newlyLearned) 1 else 0,
+                xpEarned = (today?.xpEarned ?: 0) + eval.xpAwarded,
+                roundsCompleted = today?.roundsCompleted ?: 0,
+            ),
+        )
+        return eval.xpAwarded to eval.newlyLearned
+    }
+
+    suspend fun markWordKnown(card: WordCardCandidate) {
+        val now = System.currentTimeMillis()
+        val future = now + 180L * WordGameEngine.DAY_MS
+        val existing = db.flashcards().get(card.entryId)
+        db.flashcards().upsert(
+            FlashcardEntity(
+                entryId = card.entryId,
+                lang = card.language.code,
+                headword = card.headword,
+                preview = card.preview,
+                repetitions = max(1, existing?.repetitions ?: 1),
+                intervalDays = 180,
+                easeFactor = existing?.easeFactor ?: 2.5,
+                nextReviewAt = future,
+                masteryStage = 4,
+                stabilityDays = 180.0,
+                lapses = existing?.lapses ?: 0,
+                lastReviewedAt = now,
+                isKnownSkipped = true,
+            ),
+        )
+    }
+
+    suspend fun recordRoundCompleted(bonusXp: Int = 20) {
+        val dateKey = WordGameEngine.dateKey()
+        val today = db.dailyStats().get(dateKey)
+        db.dailyStats().upsert(
+            DailyStatsEntity(
+                dateKey = dateKey,
+                wordsReviewed = today?.wordsReviewed ?: 0,
+                wordsLearned = today?.wordsLearned ?: 0,
+                xpEarned = (today?.xpEarned ?: 0) + bonusXp,
+                roundsCompleted = (today?.roundsCompleted ?: 0) + 1,
             ),
         )
     }
 }
+
+fun FlashcardEntity.toSnapshot() = WordProgressSnapshot(
+    entryId = entryId,
+    masteryStage = masteryStage,
+    stabilityDays = stabilityDays,
+    repetitions = repetitions,
+    lapses = lapses,
+    lastReviewedAtMs = lastReviewedAt,
+    nextReviewAtMs = nextReviewAt,
+    isKnownSkipped = isKnownSkipped,
+)

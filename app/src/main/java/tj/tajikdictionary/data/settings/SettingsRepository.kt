@@ -3,6 +3,7 @@ package tj.tajikdictionary.data.settings
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -26,6 +27,7 @@ class SettingsRepository(private val context: Context) {
     private val themeKey = stringPreferencesKey("theme")
     private val speechRateKey = floatPreferencesKey("speech_rate")
     private val fontScaleKey = stringPreferencesKey("font_scale")
+    private val dailyGoalKey = intPreferencesKey("daily_goal")
 
     val mode: Flow<DictionaryMode> = context.settingsStore.data.map { prefs ->
         prefs[modeKey]?.let { runCatching { DictionaryMode.valueOf(it) }.getOrNull() } ?: DictionaryMode.TJ_RU
@@ -44,6 +46,11 @@ class SettingsRepository(private val context: Context) {
             ?: FontScaleSetting.MEDIUM
     }
 
+    val dailyGoal: Flow<Int> = context.settingsStore.data.map { prefs ->
+        val goal = prefs[dailyGoalKey] ?: 10
+        if (goal > 0) goal else 10
+    }
+
     suspend fun setMode(mode: DictionaryMode) {
         context.settingsStore.edit { it[modeKey] = mode.name }
     }
@@ -58,5 +65,9 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setFontScale(scale: FontScaleSetting) {
         context.settingsStore.edit { it[fontScaleKey] = scale.name }
+    }
+
+    suspend fun setDailyGoal(goal: Int) {
+        context.settingsStore.edit { it[dailyGoalKey] = goal }
     }
 }

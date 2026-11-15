@@ -19,6 +19,7 @@ import tj.tajikdictionary.domain.model.SearchOutcome
 import tj.tajikdictionary.domain.model.SearchResult
 import tj.tajikdictionary.domain.model.TopicCount
 import tj.tajikdictionary.domain.model.Translation
+import tj.tajikdictionary.domain.model.WordCardCandidate
 import java.time.LocalDate
 
 /** Read-only access to the bundled dictionary. SQL follows docs/DATA_AND_SEARCH.md §4. */
@@ -40,19 +41,27 @@ class DictionaryRepository(
             }
 
             val direct = prefixSearch(key, languages, mode, limit)
-            if (direct.isNotEmpty()) {
+            val hasExactDirect = direct.any { TextNormalizer.searchKey(it.headword) == key }
+            if (direct.isNotEmpty() && hasExactDirect) {
                 return@withContext SearchOutcome(rawQuery, direct, languages, null, SearchMatchType.DIRECT)
             }
 
             // Phase 1 fallback 1: Tajik / Russian / English morphological stem hints (exact lemma match)
+            // Also checked when `direct` only had longer prefix hits (e.g. "китобҳо" vs "китобхона").
             val stems = WordStemmer.candidateStems(key, languages)
+                .filter { if (direct.isNotEmpty()) it.length >= 3 else true }
             if (stems.isNotEmpty()) {
                 val stemResults = exactMatches(stems, languages, mode, limit)
                 if (stemResults.isNotEmpty()) {
+                    val stemIds = stemResults.map { it.id }.toHashSet()
+                    val combined = (stemResults + direct.filter { it.id !in stemIds }).take(limit)
                     return@withContext SearchOutcome(
-                        rawQuery, stemResults, languages, null, SearchMatchType.STEM,
+                        rawQuery, combined, languages, null, SearchMatchType.STEM,
                     )
                 }
+            }
+            if (direct.isNotEmpty()) {
+                return@withContext SearchOutcome(rawQuery, direct, languages, null, SearchMatchType.DIRECT)
             }
 
             // Phase 1 fallback 2: bounded edit-distance typo tolerance
@@ -314,6 +323,101 @@ class DictionaryRepository(
             c.mapRows { getString(0) to getString(1) }.toMap()
         }
         DictionaryInfo(meta["data_version"].orEmpty(), meta["stats"].orEmpty())
+    }
+
+    /** Returns frequency-ordered Tajik candidates (plus optional cloze example) for the word-teaching game. */
+    suspend fun learningCandidates(
+        topic: String? = null,
+        mode: DictionaryMode,
+        limit: Int = 450,
+    ): List<WordCardCandidate> = withContext(io) {
+        val partnerCol = if (mode.partner == Language.RUSSIAN) "ex.ru" else "ex.en"
+        val topicClause = if (topic == null) "" else "AND e.topic = ?"
+        val sql = """
+            SELECT e.id, e.lang, e.headword, e.pos, e.frequency, e.topic,
+                   (SELECT group_concat(h, ', ') FROM (
+                        SELECT t2.headword AS h
+                        FROM translations t JOIN entries t2 ON t2.id = t.to_id
+                        WHERE t.from_id = e.id AND t2.lang = ?
+                        ORDER BY t.position LIMIT 4)) AS preview,
+                   (SELECT ex.tg FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_tg,
+                   (SELECT $partnerCol FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_partner
+            FROM entries e
+            WHERE e.lang = 'tg' $topicClause
+            ORDER BY e.frequency DESC, e.id ASC
+            LIMIT ?
+        """.trimIndent()
+        val args = buildList {
+            add(mode.partner.code)
+            if (topic != null) add(topic)
+            add(limit.toString())
+        }.toTypedArray()
+
+        db.get().rawQuery(sql, args).use { c ->
+            c.mapRows {
+                WordCardCandidate(
+                    entryId = getLong(0),
+                    language = Language.fromCode(getString(1)),
+                    headword = getString(2),
+                    preview = stringOrNull(6).orEmpty(),
+                    pos = PartOfSpeech.fromCode(stringOrNull(3)),
+                    frequency = getInt(4),
+                    topic = stringOrNull(5),
+                    exampleTg = stringOrNull(7),
+                    examplePartner = stringOrNull(8),
+                )
+            }
+        }
+    }
+
+    suspend fun learningCandidatesForIds(
+        entryIds: List<Long>,
+        mode: DictionaryMode,
+    ): List<WordCardCandidate> = withContext(io) {
+        if (entryIds.isEmpty()) return@withContext emptyList()
+        val partnerCol = if (mode.partner == Language.RUSSIAN) "ex.ru" else "ex.en"
+        val placeholders = entryIds.joinToString(",") { "?" }
+        val sql = """
+            SELECT e.id, e.lang, e.headword, e.pos, e.frequency, e.topic,
+                   (SELECT group_concat(h, ', ') FROM (
+                        SELECT t2.headword AS h
+                        FROM translations t JOIN entries t2 ON t2.id = t.to_id
+                        WHERE t.from_id = e.id
+                          AND t2.lang = CASE WHEN e.lang = 'tg' THEN ? ELSE 'tg' END
+                        ORDER BY t.position LIMIT 4)) AS preview,
+                   (SELECT ex.tg FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_tg,
+                   (SELECT $partnerCol FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_partner
+            FROM entries e
+            WHERE e.id IN ($placeholders)
+            ORDER BY e.frequency DESC, e.id ASC
+        """.trimIndent()
+        val args = buildList {
+            add(mode.partner.code)
+            entryIds.forEach { add(it.toString()) }
+        }.toTypedArray()
+
+        db.get().rawQuery(sql, args).use { c ->
+            c.mapRows {
+                WordCardCandidate(
+                    entryId = getLong(0),
+                    language = Language.fromCode(getString(1)),
+                    headword = getString(2),
+                    preview = stringOrNull(6).orEmpty(),
+                    pos = PartOfSpeech.fromCode(stringOrNull(3)),
+                    frequency = getInt(4),
+                    topic = stringOrNull(5),
+                    exampleTg = stringOrNull(7),
+                    examplePartner = stringOrNull(8),
+                )
+            }
+        }
+    }
+
+    suspend fun topTajikHeadwords(limit: Int = 60): List<String> = withContext(io) {
+        db.get().rawQuery(
+            "SELECT headword FROM entries WHERE lang = 'tg' ORDER BY frequency DESC, id ASC LIMIT ?",
+            arrayOf(limit.toString()),
+        ).use { c -> c.mapRows { getString(0) } }
     }
 
     private fun Cursor.toEntry() = Entry(

@@ -47,6 +47,20 @@ data class FlashcardEntity(
     val intervalDays: Int,
     val easeFactor: Double,
     val nextReviewAt: Long,
+    val masteryStage: Int = 0,
+    val stabilityDays: Double = 0.0,
+    val lapses: Int = 0,
+    val lastReviewedAt: Long? = null,
+    val isKnownSkipped: Boolean = false,
+)
+
+@Entity(tableName = "daily_stats")
+data class DailyStatsEntity(
+    @PrimaryKey val dateKey: String,
+    val wordsReviewed: Int,
+    val wordsLearned: Int,
+    val xpEarned: Int,
+    val roundsCompleted: Int,
 )
 
 @Dao
@@ -99,15 +113,28 @@ interface FlashcardsDao {
     suspend fun upsert(item: FlashcardEntity)
 }
 
+@Dao
+interface DailyStatsDao {
+    @Query("SELECT * FROM daily_stats ORDER BY dateKey DESC")
+    fun observeAll(): Flow<List<DailyStatsEntity>>
+
+    @Query("SELECT * FROM daily_stats WHERE dateKey = :dateKey")
+    suspend fun get(dateKey: String): DailyStatsEntity?
+
+    @Upsert
+    suspend fun upsert(item: DailyStatsEntity)
+}
+
 @Database(
-    entities = [FavoriteEntity::class, HistoryEntity::class, FlashcardEntity::class],
-    version = 2,
+    entities = [FavoriteEntity::class, HistoryEntity::class, FlashcardEntity::class, DailyStatsEntity::class],
+    version = 3,
     exportSchema = true,
 )
 abstract class UserDatabase : RoomDatabase() {
     abstract fun favorites(): FavoritesDao
     abstract fun history(): HistoryDao
     abstract fun flashcards(): FlashcardsDao
+    abstract fun dailyStats(): DailyStatsDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -131,9 +158,31 @@ abstract class UserDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `flashcards` ADD COLUMN `masteryStage` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `flashcards` ADD COLUMN `stabilityDays` REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE `flashcards` ADD COLUMN `lapses` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `flashcards` ADD COLUMN `lastReviewedAt` INTEGER")
+                db.execSQL("ALTER TABLE `flashcards` ADD COLUMN `isKnownSkipped` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `daily_stats` (
+                        `dateKey` TEXT NOT NULL,
+                        `wordsReviewed` INTEGER NOT NULL,
+                        `wordsLearned` INTEGER NOT NULL,
+                        `xpEarned` INTEGER NOT NULL,
+                        `roundsCompleted` INTEGER NOT NULL,
+                        PRIMARY KEY(`dateKey`)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         fun create(context: Context): UserDatabase =
             Room.databaseBuilder(context, UserDatabase::class.java, "user.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }

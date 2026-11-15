@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
@@ -38,10 +39,14 @@ import tj.tajikdictionary.ui.search.SearchViewModel
 import tj.tajikdictionary.ui.search.TopicEntriesScreen
 import tj.tajikdictionary.ui.settings.GrammarGuideScreen
 import tj.tajikdictionary.ui.settings.SettingsScreen
+import tj.tajikdictionary.ui.study.GameDeckSource
+import tj.tajikdictionary.ui.study.LearnScreen
 import tj.tajikdictionary.ui.study.StudyScreen
+import tj.tajikdictionary.ui.study.WordGameScreen
 
 private enum class TopTab(val route: String, val labelRes: Int, val icon: ImageVector) {
     SEARCH("search", R.string.tab_dictionary, Icons.AutoMirrored.Filled.MenuBook),
+    LEARN("learn", R.string.tab_learn, Icons.Filled.School),
     SAVED("favorites", R.string.tab_saved, Icons.Filled.Star),
     HISTORY("history", R.string.tab_history, Icons.Filled.History),
     SETTINGS("settings", R.string.tab_settings, Icons.Filled.Settings),
@@ -137,14 +142,33 @@ fun TajikDictionaryRoot(
                     settings = container.settings,
                     onBack = { navController.popBackStack() },
                     onEntryClick = openEntry,
-                    onStudyTopic = { t -> navController.navigate("study?topic=${Uri.encode(t)}") },
+                    onStudyTopic = { t -> navController.navigate("game?source=topic&topic=${Uri.encode(t)}") },
+                )
+            }
+            composable(TopTab.LEARN.route) {
+                LearnScreen(
+                    dictionary = container.dictionary,
+                    userData = container.userData,
+                    settings = container.settings,
+                    onStartGame = { source ->
+                        val route = when (source) {
+                            GameDeckSource.SmartMix -> "game?source=smart"
+                            GameDeckSource.Saved -> "game?source=saved"
+                            is GameDeckSource.Topic -> "game?source=topic&topic=${Uri.encode(source.topic)}"
+                        }
+                        navController.navigate(route)
+                    },
+                    onOpenFlashcards = { topic ->
+                        val route = if (topic == null) "study" else "study?topic=${Uri.encode(topic)}"
+                        navController.navigate(route)
+                    },
                 )
             }
             composable(TopTab.SAVED.route) {
                 FavoritesScreen(
                     userData = container.userData,
                     onEntryClick = openEntry,
-                    onStudyClick = { navController.navigate("study") },
+                    onStudyClick = { navController.navigate("game?source=saved") },
                 )
             }
             composable(TopTab.HISTORY.route) {
@@ -157,6 +181,35 @@ fun TajikDictionaryRoot(
                     settings = container.settings,
                     onOpenGrammarGuide = { navController.navigate("grammar") },
                     onOpenStudy = { navController.navigate("study") },
+                )
+            }
+            composable(
+                route = "game?source={source}&topic={topic}",
+                arguments = listOf(
+                    navArgument("source") {
+                        type = NavType.StringType
+                        defaultValue = "smart"
+                    },
+                    navArgument("topic") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { entry ->
+                val src = entry.arguments?.getString("source") ?: "smart"
+                val topic = entry.arguments?.getString("topic")
+                val deckSource = when {
+                    src == "saved" -> GameDeckSource.Saved
+                    src == "topic" && !topic.isNullOrBlank() -> GameDeckSource.Topic(topic)
+                    else -> GameDeckSource.SmartMix
+                }
+                WordGameScreen(
+                    source = deckSource,
+                    dictionary = container.dictionary,
+                    userData = container.userData,
+                    settings = container.settings,
+                    onBack = { navController.popBackStack() },
                 )
             }
             composable(

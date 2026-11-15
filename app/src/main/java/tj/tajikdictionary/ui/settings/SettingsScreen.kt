@@ -67,6 +67,7 @@ fun SettingsScreen(
     val theme by settings.theme.collectAsStateWithLifecycle(initialValue = ThemeSetting.SYSTEM)
     val speechRate by settings.speechRate.collectAsStateWithLifecycle(initialValue = 1.0f)
     val fontScale by settings.fontScale.collectAsStateWithLifecycle(initialValue = FontScaleSetting.MEDIUM)
+    val dailyGoal by settings.dailyGoal.collectAsStateWithLifecycle(initialValue = 10)
     val info by produceState<DictionaryInfo?>(initialValue = null, dictionary) {
         value = dictionary.info()
     }
@@ -191,6 +192,17 @@ fun SettingsScreen(
             }
 
             Text(stringResource(R.string.settings_learning), style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.settings_daily_goal), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val goals = listOf(5, 10, 15, 20)
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                goals.forEachIndexed { index, goal ->
+                    SegmentedButton(
+                        selected = goal == dailyGoal,
+                        onClick = { scope.launch { settings.setDailyGoal(goal) } },
+                        shape = SegmentedButtonDefaults.itemShape(index, goals.size),
+                    ) { Text("$goal") }
+                }
+            }
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     ListItem(
