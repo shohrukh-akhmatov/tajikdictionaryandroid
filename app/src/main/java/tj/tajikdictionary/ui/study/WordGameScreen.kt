@@ -53,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -81,6 +82,7 @@ import tj.tajikdictionary.domain.model.ChallengeKind
 import tj.tajikdictionary.domain.model.DictionaryMode
 import tj.tajikdictionary.domain.model.GameRoundItem
 import tj.tajikdictionary.domain.model.Language
+import tj.tajikdictionary.domain.model.LexiconStats
 import tj.tajikdictionary.domain.model.WordCardCandidate
 import tj.tajikdictionary.domain.model.WordGameEngine
 import tj.tajikdictionary.ui.components.EmptyState
@@ -91,6 +93,8 @@ import kotlin.math.roundToInt
 
 sealed interface GameDeckSource {
     data object SmartMix : GameDeckSource
+    data object DueReviews : GameDeckSource
+    data object WeakWords : GameDeckSource
     data object Saved : GameDeckSource
     data class Topic(val topic: String) : GameDeckSource
 }
@@ -114,6 +118,9 @@ fun WordGameScreen(
     val hasCompletedPlacement by settings.hasCompletedPlacement.collectAsStateWithLifecycle(initialValue = false)
     val flashcards by userData.flashcards.collectAsStateWithLifecycle(initialValue = emptyList())
     val dailyStats by userData.dailyStats.collectAsStateWithLifecycle(initialValue = emptyList())
+    val lexiconStats by produceState(initialValue = LexiconStats.FALLBACK, dictionary) {
+        value = dictionary.lexiconStats()
+    }
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -209,17 +216,44 @@ fun WordGameScreen(
                 val favIds = userData.favorites.first().map { it.entryId }
                 dictionary.learningCandidatesForIds(favIds, mode)
             }
+
+            GameDeckSource.DueReviews, GameDeckSource.WeakWords -> {
+                val studiedIds = progressEntities
+                    .filter { !it.isKnownSkipped }
+                    .map { it.entryId }
+                dictionary.learningCandidatesForIds(studiedIds, mode)
+            }
+        }
+        val distractorPool = if (pool.size >= 8) {
+            pool
+        } else {
+            val extra = dictionary.learningCandidates(topic = null, mode = mode, limit = 150)
+            (pool + extra).distinctBy { it.entryId }
         }
         val fallback = dictionary.topTajikHeadwords(60)
-        val selected = WordGameEngine.buildRoundQueue(
-            candidates = pool,
-            progressById = progressMap,
-            roundSize = WordGameEngine.DEFAULT_ROUND_SIZE,
-            targetMaxFrequency = if (source == GameDeckSource.SmartMix) ceilingFreq else null,
-        )
+        val selected = when (source) {
+            GameDeckSource.DueReviews -> WordGameEngine.buildDueRoundQueue(
+                candidates = pool,
+                progressById = progressMap,
+                roundSize = WordGameEngine.DEFAULT_ROUND_SIZE,
+            )
+
+            GameDeckSource.WeakWords -> WordGameEngine.buildWeakRoundQueue(
+                candidates = pool,
+                progressById = progressMap,
+                roundSize = WordGameEngine.DEFAULT_ROUND_SIZE,
+            )
+
+            else -> WordGameEngine.buildRoundQueue(
+                candidates = pool,
+                progressById = progressMap,
+                roundSize = WordGameEngine.DEFAULT_ROUND_SIZE,
+                targetMaxFrequency = if (source == GameDeckSource.SmartMix) ceilingFreq else null,
+            )
+        }
         val items = WordGameEngine.makeRoundItems(
             selected = selected,
-            allPool = pool,
+            allPool = distractorPool,
             fallbackDistractors = fallback,
             progressById = progressMap,
         )
@@ -355,6 +389,8 @@ fun WordGameScreen(
 
     val title = when (source) {
         GameDeckSource.SmartMix -> stringResource(R.string.game_smart_mix)
+        GameDeckSource.DueReviews -> stringResource(R.string.game_due_reviews_title)
+        GameDeckSource.WeakWords -> stringResource(R.string.game_weak_words)
         GameDeckSource.Saved -> stringResource(R.string.tab_saved)
         is GameDeckSource.Topic -> source.topic.replaceFirstChar { it.uppercase() }
     }
@@ -425,12 +461,13 @@ fun WordGameScreen(
                 )
             }
 
-            roundFinished || queue.isEmpty() -> {
-                val summary = remember(flashcards, dailyStats, dailyGoal, placementLevel, placementBaselineWords) {
+            roundFinished -> {
+                val summary = remember(flashcards, dailyStats, dailyGoal, lexiconStats, placementLevel, placementBaselineWords) {
                     WordGameEngine.computeSummary(
                         progress = flashcards.map { it.toSnapshot() },
                         logs = dailyStats.map { it.toSnapshot() },
                         dailyGoal = dailyGoal,
+                        lexiconStats = lexiconStats,
                         placementLevel = placementLevel,
                         placementBaselineWords = placementBaselineWords,
                     )
@@ -473,8 +510,40 @@ fun WordGameScreen(
                         SummaryStatTile("$accuracy%", stringResource(R.string.game_accuracy), Modifier.weight(1f))
                         SummaryStatTile("${summary.currentStreakDays}d", stringResource(R.string.game_streak), Modifier.weight(1f))
                     }
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(999.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                        ) {
+                            Text(
+                                "${summary.cefrLevel.code} · ${"%.1f".format(Locale.US, summary.textRecognitionPercent)}%",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                        if (summary.todayReviewed >= dailyGoal) {
+                            Surface(
+                                shape = RoundedCornerShape(999.dp),
+                                color = Color(0xFF2E7D32).copy(alpha = 0.14f),
+                            ) {
+                                Text(
+                                    stringResource(R.string.game_daily_goal_met),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF2E7D32),
+                                )
+                            }
+                        }
+                    }
                     if (newlyLearnedInRound > 0) {
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(10.dp))
                         Text(
                             stringResource(R.string.game_new_started, newlyLearnedInRound),
                             style = MaterialTheme.typography.bodySmall,
@@ -491,6 +560,30 @@ fun WordGameScreen(
                         onClick = onBack,
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(R.string.game_done)) }
+                }
+            }
+
+            queue.isEmpty() -> {
+                val emptyText = when (source) {
+                    GameDeckSource.DueReviews -> stringResource(R.string.game_empty_due)
+                    GameDeckSource.WeakWords -> stringResource(R.string.game_empty_weak)
+                    else -> stringResource(R.string.game_empty_message)
+                }
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    EmptyState(
+                        icon = Icons.Filled.AutoAwesome,
+                        title = title,
+                        message = emptyText,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    OutlinedButton(onClick = onBack) {
+                        Text(stringResource(R.string.game_done))
+                    }
                 }
             }
 

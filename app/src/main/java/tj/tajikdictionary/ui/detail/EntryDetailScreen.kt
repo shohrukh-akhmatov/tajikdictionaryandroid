@@ -23,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
@@ -37,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -54,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import tj.tajikdictionary.R
+import tj.tajikdictionary.data.user.FlashcardEntity
 import tj.tajikdictionary.domain.model.EntryDetail
 import tj.tajikdictionary.domain.model.Language
 import tj.tajikdictionary.domain.model.Translation
@@ -144,8 +148,17 @@ fun EntryDetailScreen(
                         }
                     },
                     fontScale = state.fontScale.scale,
+                    cardProgress = state.cardProgress,
                     onCopy = { copyEntry(context, detail) },
                     onShare = { shareEntry(context, detail) },
+                    onQueueForPractice = {
+                        viewModel.queueForPractice()
+                        Toast.makeText(context, context.getString(R.string.detail_queued_toast), Toast.LENGTH_SHORT).show()
+                    },
+                    onMarkKnown = {
+                        viewModel.markAsKnown()
+                        Toast.makeText(context, context.getString(R.string.detail_known_toast), Toast.LENGTH_SHORT).show()
+                    },
                     onEntryClick = onEntryClick,
                     modifier = Modifier.padding(padding),
                 )
@@ -161,8 +174,11 @@ private fun DetailContent(
     canSpeak: Boolean,
     onSpeak: () -> Unit,
     fontScale: Float,
+    cardProgress: FlashcardEntity?,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onQueueForPractice: () -> Unit,
+    onMarkKnown: () -> Unit,
     onEntryClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -272,6 +288,53 @@ private fun DetailContent(
                         Text(ex.tg, fontWeight = FontWeight.SemiBold)
                         ex.ru?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         ex.en?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                }
+            }
+        }
+
+        if (detail.entry.language == Language.TAJIK) {
+            item(key = "learning_progress") {
+                val statusLabel = when {
+                    cardProgress == null -> stringResource(R.string.detail_learning_unstudied)
+                    cardProgress.isKnownSkipped || cardProgress.masteryStage >= 4 -> stringResource(R.string.detail_learning_mastered)
+                    else -> stringResource(R.string.detail_learning_stage, cardProgress.masteryStage)
+                }
+                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                stringResource(R.string.detail_learning_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                statusLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilledTonalButton(onClick = onQueueForPractice) {
+                                Icon(Icons.Filled.AddCircleOutline, contentDescription = null)
+                                Spacer(Modifier.padding(horizontal = 3.dp))
+                                Text(stringResource(R.string.detail_add_to_practice))
+                            }
+                            if (cardProgress == null || (!cardProgress.isKnownSkipped && cardProgress.masteryStage < 4)) {
+                                OutlinedButton(onClick = onMarkKnown) {
+                                    Icon(Icons.Filled.CheckCircle, contentDescription = null)
+                                    Spacer(Modifier.padding(horizontal = 3.dp))
+                                    Text(stringResource(R.string.detail_mark_known))
+                                }
+                            }
+                        }
                     }
                 }
             }

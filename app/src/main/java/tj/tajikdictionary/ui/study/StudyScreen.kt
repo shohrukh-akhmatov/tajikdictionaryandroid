@@ -37,9 +37,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlin.math.max
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -87,6 +89,7 @@ fun StudyScreen(
     var currentIndex by remember { mutableIntStateOf(0) }
     var flipped by remember { mutableStateOf(false) }
     var reviewedCount by remember { mutableIntStateOf(0) }
+    var cardPresentedAtMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(selectedTopic, favorites, mode) {
@@ -107,6 +110,7 @@ fun StudyScreen(
         currentIndex = 0
         flipped = false
         reviewedCount = 0
+        cardPresentedAtMs = System.currentTimeMillis()
     }
 
     Scaffold(
@@ -263,6 +267,7 @@ fun StudyScreen(
                         ) { Text(stringResource(R.string.study_reveal)) }
                     } else {
                         val grade: (ReviewRating) -> Unit = { rating ->
+                            val elapsedMs = max(500L, System.currentTimeMillis() - cardPresentedAtMs)
                             scope.launch {
                                 userData.reviewFlashcard(
                                     card.entryId,
@@ -270,11 +275,13 @@ fun StudyScreen(
                                     card.headword,
                                     card.preview,
                                     rating,
+                                    elapsedMs,
                                 )
                             }
                             reviewedCount += 1
                             currentIndex += 1
                             flipped = false
+                            cardPresentedAtMs = System.currentTimeMillis()
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),

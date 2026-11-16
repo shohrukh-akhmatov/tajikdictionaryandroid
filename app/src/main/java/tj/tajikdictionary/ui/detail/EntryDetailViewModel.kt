@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import tj.tajikdictionary.data.dictionary.DictionaryRepository
 import tj.tajikdictionary.data.settings.FontScaleSetting
 import tj.tajikdictionary.data.settings.SettingsRepository
+import tj.tajikdictionary.data.user.FlashcardEntity
 import tj.tajikdictionary.data.user.UserDataRepository
 import tj.tajikdictionary.domain.model.DictionaryMode
 import tj.tajikdictionary.domain.model.EntryDetail
@@ -21,6 +22,7 @@ data class EntryDetailUiState(
     val detail: EntryDetail? = null,
     val isLoading: Boolean = true,
     val isFavorite: Boolean = false,
+    val cardProgress: FlashcardEntity? = null,
     val mode: DictionaryMode = DictionaryMode.TJ_RU,
     val speechRate: Float = 1.0f,
     val fontScale: FontScaleSetting = FontScaleSetting.MEDIUM,
@@ -38,14 +40,14 @@ class EntryDetailViewModel(
     val uiState: StateFlow<EntryDetailUiState> = combine(
         loaded,
         userData.isFavorite(entryId),
-        settings.mode,
-        settings.speechRate,
-        settings.fontScale,
-    ) { (detail, loading), fav, mode, rate, scale ->
+        userData.flashcard(entryId),
+        combine(settings.mode, settings.speechRate, settings.fontScale, ::Triple),
+    ) { (detail, loading), fav, card, (mode, rate, scale) ->
         EntryDetailUiState(
             detail = detail,
             isLoading = loading,
             isFavorite = fav,
+            cardProgress = card,
             mode = mode,
             speechRate = rate,
             fontScale = scale,
@@ -58,15 +60,11 @@ class EntryDetailViewModel(
             loaded.value = detail to false
             if (detail != null) {
                 val mode = settings.mode.first()
-                val targetLang = mode.translationTarget(detail.entry.language)
-                val preview = detail.translations[targetLang].orEmpty()
-                    .take(4)
-                    .joinToString(", ") { it.headword }
                 userData.recordView(
                     entryId = detail.entry.id,
                     language = detail.entry.language,
                     headword = detail.entry.headword,
-                    preview = preview,
+                    preview = previewFor(detail, mode),
                 )
             }
         }
@@ -75,19 +73,48 @@ class EntryDetailViewModel(
     fun toggleFavorite() {
         val state = uiState.value
         val detail = state.detail ?: return
-        val targetLang = state.mode.translationTarget(detail.entry.language)
-        val preview = detail.translations[targetLang].orEmpty()
-            .take(4)
-            .joinToString(", ") { it.headword }
         viewModelScope.launch {
             userData.setFavorite(
                 entryId = detail.entry.id,
                 language = detail.entry.language,
                 headword = detail.entry.headword,
-                preview = preview,
+                preview = previewFor(detail, state.mode),
                 favorite = !state.isFavorite,
             )
         }
+    }
+
+    fun queueForPractice() {
+        val state = uiState.value
+        val detail = state.detail ?: return
+        viewModelScope.launch {
+            userData.queueWordForPractice(
+                entryId = detail.entry.id,
+                language = detail.entry.language,
+                headword = detail.entry.headword,
+                preview = previewFor(detail, state.mode),
+            )
+        }
+    }
+
+    fun markAsKnown() {
+        val state = uiState.value
+        val detail = state.detail ?: return
+        viewModelScope.launch {
+            userData.markEntryKnown(
+                entryId = detail.entry.id,
+                language = detail.entry.language,
+                headword = detail.entry.headword,
+                preview = previewFor(detail, state.mode),
+            )
+        }
+    }
+
+    private fun previewFor(detail: EntryDetail, mode: DictionaryMode): String {
+        val targetLang = mode.translationTarget(detail.entry.language)
+        return detail.translations[targetLang].orEmpty()
+            .take(4)
+            .joinToString(", ") { it.headword }
     }
 
     class Factory(

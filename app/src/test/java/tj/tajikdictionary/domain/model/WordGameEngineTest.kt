@@ -1,6 +1,7 @@
 package tj.tajikdictionary.domain.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -181,5 +182,58 @@ class WordGameEngineTest {
         assertEquals(CefrLevel.A2, summary.cefrLevel)
         assertEquals(7, summary.recent7Days.size)
         assertTrue(summary.recent7Days.last().metGoal)
+    }
+
+    @Test
+    fun makeClozeRespectsWordBoundariesAndDoesNotCorruptSubstrings() {
+        val sentence = WordGameEngine.makeClozeSentence("Дар китобхона он мехонад.", "он")
+        assertTrue(sentence != null)
+        assertTrue(sentence!!.contains("китобхона"))
+        assertFalse(sentence.contains("китобх____"))
+        assertEquals("Дар китобхона ____ мехонад.", sentence)
+    }
+
+    @Test
+    fun dueAndWeakQueuesPrioritizeCorrectSubsets() {
+        val now = 1_731_000_000_000L
+        val pool = listOf(
+            WordCardCandidate(1, Language.TAJIK, "як", "один", PartOfSpeech.NUMERAL, 100, null, null, null),
+            WordCardCandidate(2, Language.TAJIK, "ду", "два", PartOfSpeech.NUMERAL, 95, null, null, null),
+            WordCardCandidate(3, Language.TAJIK, "се", "три", PartOfSpeech.NUMERAL, 90, null, null, null),
+        )
+        val progress = mapOf(
+            1L to WordProgressSnapshot(1L, masteryStage = 1, stabilityDays = 0.5, repetitions = 1, lapses = 3, lastReviewedAtMs = now - WordGameEngine.DAY_MS, nextReviewAtMs = now - 1000L),
+            2L to WordProgressSnapshot(2L, masteryStage = 4, stabilityDays = 180.0, repetitions = 5, lapses = 0, lastReviewedAtMs = now - WordGameEngine.DAY_MS, nextReviewAtMs = now + 180 * WordGameEngine.DAY_MS, isKnownSkipped = true),
+            3L to WordProgressSnapshot(3L, masteryStage = 2, stabilityDays = 4.0, repetitions = 2, lapses = 0, lastReviewedAtMs = now - WordGameEngine.DAY_MS, nextReviewAtMs = now + WordGameEngine.DAY_MS),
+        )
+        val due = WordGameEngine.buildDueRoundQueue(pool, progress, nowMs = now, roundSize = 5)
+        assertEquals(listOf(1L, 3L), due.map { it.entryId })
+
+        val weak = WordGameEngine.buildWeakRoundQueue(pool, progress, roundSize = 5)
+        assertEquals(listOf(1L), weak.map { it.entryId })
+    }
+
+    @Test
+    fun placementSingleItemTierCanPassAndClassicFlashcardUpdatesMastery() {
+        val q1 = PlacementQuestion(
+            candidate = WordCardCandidate(10, Language.TAJIK, "салом", "привет", PartOfSpeech.INTERJECTION, 100, null, null, null),
+            tier = 1,
+            choices = listOf("привет", "вода", "дом", "книга"),
+        )
+        val singleTierResult = WordGameEngine.evaluatePlacement(listOf(PlacementAnswer(q1, true)))
+        assertEquals(CefrLevel.A1, singleTierResult.cefrLevel)
+
+        val now = 1_731_000_000_000L
+        val (evalGood, learned) = WordGameEngine.evaluateClassicFlashcard(
+            existing = null,
+            entryId = 10L,
+            rating = ReviewRating.GOOD,
+            intervalDays = 1,
+            nextDueMs = now + WordGameEngine.DAY_MS,
+            nowMs = now,
+        )
+        assertTrue(learned)
+        assertEquals(1, evalGood.updated.masteryStage)
+        assertTrue(evalGood.xpAwarded > 0)
     }
 }

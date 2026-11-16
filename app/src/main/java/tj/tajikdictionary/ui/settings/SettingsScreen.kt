@@ -83,8 +83,20 @@ fun SettingsScreen(
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val items = userData.favorites.first()
-            val payload = FavoritesBackup.encode(items)
+            val favs = userData.favorites.first()
+            val cards = userData.flashcards.first()
+            val logs = userData.dailyStats.first()
+            val placement = if (hasCompletedPlacement && placementLevel != null) {
+                val lvl = placementLevel!!
+                FavoritesBackup.PlacementBackup(
+                    cefrLevel = lvl.code,
+                    ceilingFreq = lvl.recommendedCeilingFrequency,
+                    baselineWords = lvl.baselineKnownWords,
+                )
+            } else {
+                null
+            }
+            val payload = FavoritesBackup.encodeFull(favs, cards, logs, placement)
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
                     context.contentResolver.openOutputStream(uri)?.use { out ->
@@ -93,7 +105,7 @@ fun SettingsScreen(
                 }.getOrDefault(false)
             }
             val msg = if (ok) {
-                context.getString(R.string.backup_exported, items.size)
+                context.getString(R.string.backup_exported, favs.size + cards.size)
             } else {
                 context.getString(R.string.backup_failed)
             }
@@ -111,8 +123,14 @@ fun SettingsScreen(
                     val json = context.contentResolver.openInputStream(uri)?.use { input ->
                         input.bufferedReader(Charsets.UTF_8).readText()
                     } ?: error("Empty file")
-                    FavoritesBackup.decode(json)
-                }.map { decoded -> userData.importFavorites(decoded) }.getOrNull()
+                    FavoritesBackup.decodeFull(json)
+                }.mapCatching { decoded ->
+                    val written = userData.importFullBackup(decoded)
+                    decoded.placement?.let { p ->
+                        settings.applyPlacementBackup(p.cefrLevel, p.ceilingFreq, p.baselineWords)
+                    }
+                    written
+                }.getOrNull()
             }
             val msg = if (count != null) {
                 context.getString(R.string.backup_imported, count)

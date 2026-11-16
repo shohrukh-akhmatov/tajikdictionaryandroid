@@ -103,4 +103,15 @@ class SettingsRepository(private val context: Context) {
             prefs[hasCompletedPlacementKey] = true
         }
     }
+
+    suspend fun applyPlacementBackup(cefrCode: String, ceilingFreq: Int, baselineWords: Int) {
+        val level = CefrLevel.entries.firstOrNull { it.code.equals(cefrCode, ignoreCase = true) || it.name.equals(cefrCode, ignoreCase = true) }
+            ?: return
+        context.settingsStore.edit { prefs ->
+            prefs[placementLevelKey] = level.name
+            prefs[placementCeilingFreqKey] = ceilingFreq
+            prefs[placementBaselineWordsKey] = baselineWords
+            prefs[hasCompletedPlacementKey] = true
+        }
+    }
 }

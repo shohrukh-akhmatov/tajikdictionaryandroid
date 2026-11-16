@@ -1,17 +1,97 @@
 package tj.tajikdictionary.data.user
 
 /**
- * Pure-Kotlin JSON serializer/parser for exporting and importing saved favorites
+ * Pure-Kotlin JSON serializer/parser (v1 favorites-only & v2 full learning backup)
  * using a cross-platform schema shared with the iOS app.
  */
 object FavoritesBackup {
-    const val CURRENT_VERSION = 1
+    const val CURRENT_VERSION = 2
+
+    data class PlacementBackup(
+        val cefrLevel: String,
+        val ceilingFreq: Int,
+        val baselineWords: Int,
+    )
+
+    data class FullBackupData(
+        val favorites: List<FavoriteEntity>,
+        val flashcards: List<FlashcardEntity>,
+        val dailyLogs: List<DailyStatsEntity>,
+        val placement: PlacementBackup?,
+    )
 
     fun encode(favorites: List<FavoriteEntity>, exportedAtMs: Long = System.currentTimeMillis()): String {
         val sb = StringBuilder()
         sb.append("{\n")
+        sb.append("  \"version\": 1,\n")
+        sb.append("  \"exportedAt\": ").append(exportedAtMs).append(",\n")
+        appendFavoritesArray(sb, favorites)
+        sb.append("\n}\n")
+        return sb.toString()
+    }
+
+    fun encodeFull(
+        favorites: List<FavoriteEntity>,
+        flashcards: List<FlashcardEntity>,
+        dailyLogs: List<DailyStatsEntity>,
+        placement: PlacementBackup?,
+        exportedAtMs: Long = System.currentTimeMillis(),
+    ): String {
+        val sb = StringBuilder()
+        sb.append("{\n")
         sb.append("  \"version\": ").append(CURRENT_VERSION).append(",\n")
         sb.append("  \"exportedAt\": ").append(exportedAtMs).append(",\n")
+        appendFavoritesArray(sb, favorites)
+        sb.append(",\n  \"flashcards\": [")
+        if (flashcards.isNotEmpty()) sb.append('\n')
+        flashcards.forEachIndexed { idx, c ->
+            sb.append("    {\n")
+            sb.append("      \"entryId\": ").append(c.entryId).append(",\n")
+            sb.append("      \"lang\": \"").append(escapeJson(c.lang)).append("\",\n")
+            sb.append("      \"headword\": \"").append(escapeJson(c.headword)).append("\",\n")
+            sb.append("      \"preview\": \"").append(escapeJson(c.preview)).append("\",\n")
+            sb.append("      \"repetitions\": ").append(c.repetitions).append(",\n")
+            sb.append("      \"intervalDays\": ").append(c.intervalDays).append(",\n")
+            sb.append("      \"easeFactor\": ").append(c.easeFactor).append(",\n")
+            sb.append("      \"nextReviewAt\": ").append(c.nextReviewAt).append(",\n")
+            sb.append("      \"masteryStage\": ").append(c.masteryStage).append(",\n")
+            sb.append("      \"stabilityDays\": ").append(c.stabilityDays).append(",\n")
+            sb.append("      \"lapses\": ").append(c.lapses).append(",\n")
+            sb.append("      \"lastReviewedAt\": ").append(c.lastReviewedAt ?: "null").append(",\n")
+            sb.append("      \"isKnownSkipped\": ").append(c.isKnownSkipped).append("\n")
+            sb.append("    }")
+            if (idx + 1 < flashcards.size) sb.append(',')
+            sb.append('\n')
+        }
+        sb.append(if (flashcards.isNotEmpty()) "  ],\n" else "],\n")
+        sb.append("  \"dailyLogs\": [")
+        if (dailyLogs.isNotEmpty()) sb.append('\n')
+        dailyLogs.forEachIndexed { idx, l ->
+            sb.append("    {\n")
+            sb.append("      \"dateKey\": \"").append(escapeJson(l.dateKey)).append("\",\n")
+            sb.append("      \"wordsReviewed\": ").append(l.wordsReviewed).append(",\n")
+            sb.append("      \"wordsLearned\": ").append(l.wordsLearned).append(",\n")
+            sb.append("      \"xpEarned\": ").append(l.xpEarned).append(",\n")
+            sb.append("      \"roundsCompleted\": ").append(l.roundsCompleted).append(",\n")
+            sb.append("      \"studySeconds\": ").append(l.studySeconds).append(",\n")
+            sb.append("      \"correctReviews\": ").append(l.correctReviews).append("\n")
+            sb.append("    }")
+            if (idx + 1 < dailyLogs.size) sb.append(',')
+            sb.append('\n')
+        }
+        sb.append(if (dailyLogs.isNotEmpty()) "  ]" else "]")
+        if (placement != null) {
+            sb.append(",\n  \"placement\": {\n")
+            sb.append("    \"cefrLevel\": \"").append(escapeJson(placement.cefrLevel)).append("\",\n")
+            sb.append("    \"ceilingFreq\": ").append(placement.ceilingFreq).append(",\n")
+            sb.append("    \"baselineWords\": ").append(placement.baselineWords).append("\n")
+            sb.append("  }")
+        }
+        sb.append("\n}\n")
+        return sb.toString()
+    }
+
+    private fun appendFavoritesArray(sb: StringBuilder, favorites: List<FavoriteEntity>) {
         sb.append("  \"favorites\": [")
         if (favorites.isNotEmpty()) sb.append('\n')
         favorites.forEachIndexed { idx, item ->
@@ -25,38 +105,86 @@ object FavoritesBackup {
             if (idx + 1 < favorites.size) sb.append(',')
             sb.append('\n')
         }
-        sb.append(if (favorites.isNotEmpty()) "  ]\n" else "]\n")
-        sb.append("}\n")
-        return sb.toString()
+        sb.append(if (favorites.isNotEmpty()) "  ]" else "]")
     }
 
-    fun decode(json: String): List<FavoriteEntity> {
+    fun decode(json: String): List<FavoriteEntity> = decodeFull(json).favorites
+
+    fun decodeFull(json: String): FullBackupData {
         val parsed = JsonReader(json).parseValue()
-        val array: List<Any?> = when (parsed) {
-            is Map<*, *> -> {
-                @Suppress("UNCHECKED_CAST")
-                (parsed["favorites"] as? List<Any?>)
-                    ?: throw IllegalArgumentException("Missing 'favorites' array")
-            }
-            is List<*> -> parsed
-            else -> throw IllegalArgumentException("Expected JSON object or array")
+        if (parsed is List<*>) {
+            return FullBackupData(parseFavorites(parsed), emptyList(), emptyList(), null)
         }
-        return array.mapNotNull { raw ->
-            val obj = raw as? Map<*, *> ?: return@mapNotNull null
-            val entryId = (obj["entryId"] as? Number)?.toLong() ?: return@mapNotNull null
-            val lang = obj["lang"] as? String ?: return@mapNotNull null
-            val headword = obj["headword"] as? String ?: return@mapNotNull null
-            if (lang.isBlank() || headword.isBlank()) return@mapNotNull null
-            val preview = obj["preview"] as? String ?: ""
-            val addedAt = (obj["addedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
-            FavoriteEntity(
-                entryId = entryId,
-                lang = lang,
-                headword = headword,
-                preview = preview,
-                addedAt = addedAt,
-            )
+        val obj = parsed as? Map<*, *> ?: throw IllegalArgumentException("Expected JSON object or array")
+        @Suppress("UNCHECKED_CAST")
+        val favList = (obj["favorites"] as? List<Any?>)
+            ?: throw IllegalArgumentException("Missing 'favorites' array")
+        @Suppress("UNCHECKED_CAST")
+        val cardList = (obj["flashcards"] as? List<Any?>).orEmpty()
+        @Suppress("UNCHECKED_CAST")
+        val logList = (obj["dailyLogs"] as? List<Any?>).orEmpty()
+        val placementMap = obj["placement"] as? Map<*, *>
+        val placement = placementMap?.let { p ->
+            val level = p["cefrLevel"] as? String ?: return@let null
+            val ceiling = (p["ceilingFreq"] as? Number)?.toInt() ?: 100
+            val baseline = (p["baselineWords"] as? Number)?.toInt() ?: 0
+            PlacementBackup(level, ceiling, baseline)
         }
+        return FullBackupData(
+            favorites = parseFavorites(favList),
+            flashcards = parseFlashcards(cardList),
+            dailyLogs = parseDailyLogs(logList),
+            placement = placement,
+        )
+    }
+
+    private fun parseFavorites(array: List<Any?>): List<FavoriteEntity> = array.mapNotNull { raw ->
+        val obj = raw as? Map<*, *> ?: return@mapNotNull null
+        val entryId = (obj["entryId"] as? Number)?.toLong() ?: return@mapNotNull null
+        val lang = obj["lang"] as? String ?: return@mapNotNull null
+        val headword = obj["headword"] as? String ?: return@mapNotNull null
+        if (lang.isBlank() || headword.isBlank()) return@mapNotNull null
+        val preview = obj["preview"] as? String ?: ""
+        val addedAt = (obj["addedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+        FavoriteEntity(entryId, lang, headword, preview, addedAt)
+    }
+
+    private fun parseFlashcards(array: List<Any?>): List<FlashcardEntity> = array.mapNotNull { raw ->
+        val obj = raw as? Map<*, *> ?: return@mapNotNull null
+        val entryId = (obj["entryId"] as? Number)?.toLong() ?: return@mapNotNull null
+        val lang = obj["lang"] as? String ?: return@mapNotNull null
+        val headword = obj["headword"] as? String ?: return@mapNotNull null
+        if (lang.isBlank() || headword.isBlank()) return@mapNotNull null
+        FlashcardEntity(
+            entryId = entryId,
+            lang = lang,
+            headword = headword,
+            preview = obj["preview"] as? String ?: "",
+            repetitions = (obj["repetitions"] as? Number)?.toInt() ?: 0,
+            intervalDays = (obj["intervalDays"] as? Number)?.toInt() ?: 0,
+            easeFactor = (obj["easeFactor"] as? Number)?.toDouble() ?: 2.5,
+            nextReviewAt = (obj["nextReviewAt"] as? Number)?.toLong() ?: 0L,
+            masteryStage = (obj["masteryStage"] as? Number)?.toInt() ?: 0,
+            stabilityDays = (obj["stabilityDays"] as? Number)?.toDouble() ?: 0.0,
+            lapses = (obj["lapses"] as? Number)?.toInt() ?: 0,
+            lastReviewedAt = (obj["lastReviewedAt"] as? Number)?.toLong(),
+            isKnownSkipped = (obj["isKnownSkipped"] as? Boolean) ?: false,
+        )
+    }
+
+    private fun parseDailyLogs(array: List<Any?>): List<DailyStatsEntity> = array.mapNotNull { raw ->
+        val obj = raw as? Map<*, *> ?: return@mapNotNull null
+        val dateKey = obj["dateKey"] as? String ?: return@mapNotNull null
+        if (dateKey.isBlank()) return@mapNotNull null
+        DailyStatsEntity(
+            dateKey = dateKey,
+            wordsReviewed = (obj["wordsReviewed"] as? Number)?.toInt() ?: 0,
+            wordsLearned = (obj["wordsLearned"] as? Number)?.toInt() ?: 0,
+            xpEarned = (obj["xpEarned"] as? Number)?.toInt() ?: 0,
+            roundsCompleted = (obj["roundsCompleted"] as? Number)?.toInt() ?: 0,
+            studySeconds = (obj["studySeconds"] as? Number)?.toInt() ?: 0,
+            correctReviews = (obj["correctReviews"] as? Number)?.toInt() ?: 0,
+        )
     }
 
     private fun escapeJson(value: String): String {

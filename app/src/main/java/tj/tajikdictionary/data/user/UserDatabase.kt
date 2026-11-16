@@ -111,6 +111,9 @@ interface FlashcardsDao {
     @Query("SELECT * FROM flashcards WHERE entryId = :entryId")
     suspend fun get(entryId: Long): FlashcardEntity?
 
+    @Query("SELECT * FROM flashcards WHERE entryId = :entryId")
+    fun observeOne(entryId: Long): Flow<FlashcardEntity?>
+
     @Upsert
     suspend fun upsert(item: FlashcardEntity)
 }

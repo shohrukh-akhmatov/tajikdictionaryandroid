@@ -44,6 +44,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -84,6 +85,7 @@ fun LearnScreen(
     onStartGame: (GameDeckSource) -> Unit,
     onOpenFlashcards: (String?) -> Unit,
     onOpenPlacement: () -> Unit,
+    onOpenVocabulary: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val flashcards by userData.flashcards.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -353,6 +355,25 @@ fun LearnScreen(
                                 label = { Text(stringResource(R.string.game_smart_mix)) },
                             )
                         }
+                        if (summary.dueNowCount > 0) {
+                            item(key = "due_reviews") {
+                                FilterChip(
+                                    selected = selectedSource == GameDeckSource.DueReviews,
+                                    onClick = { selectedSource = GameDeckSource.DueReviews },
+                                    label = { Text("${stringResource(R.string.game_due_reviews_chip)} (${summary.dueNowCount})") },
+                                )
+                            }
+                        }
+                        val weakCount = flashcards.count { !it.isKnownSkipped && (it.lapses > 0 || (it.lastReviewedAt != null && it.masteryStage <= 1) || it.stabilityDays < 2.0) }
+                        if (weakCount > 0) {
+                            item(key = "weak_words") {
+                                FilterChip(
+                                    selected = selectedSource == GameDeckSource.WeakWords,
+                                    onClick = { selectedSource = GameDeckSource.WeakWords },
+                                    label = { Text("${stringResource(R.string.game_weak_words)} ($weakCount)") },
+                                )
+                            }
+                        }
                         if (favorites.isNotEmpty()) {
                             item(key = "saved") {
                                 FilterChip(
@@ -500,11 +521,25 @@ fun LearnScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text(
-                        stringResource(R.string.game_vocab_progress),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            stringResource(R.string.game_vocab_progress),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        TextButton(onClick = onOpenVocabulary) {
+                            Text(stringResource(R.string.vocab_open_browser))
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),

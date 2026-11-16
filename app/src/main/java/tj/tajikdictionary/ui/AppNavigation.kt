@@ -43,6 +43,7 @@ import tj.tajikdictionary.ui.study.GameDeckSource
 import tj.tajikdictionary.ui.study.LearnScreen
 import tj.tajikdictionary.ui.study.PlacementTestScreen
 import tj.tajikdictionary.ui.study.StudyScreen
+import tj.tajikdictionary.ui.study.VocabularyListScreen
 import tj.tajikdictionary.ui.study.WordGameScreen
 
 private enum class TopTab(val route: String, val labelRes: Int, val icon: ImageVector) {
@@ -154,6 +155,8 @@ fun TajikDictionaryRoot(
                     onStartGame = { source ->
                         val route = when (source) {
                             GameDeckSource.SmartMix -> "game?source=smart"
+                            GameDeckSource.DueReviews -> "game?source=due"
+                            GameDeckSource.WeakWords -> "game?source=weak"
                             GameDeckSource.Saved -> "game?source=saved"
                             is GameDeckSource.Topic -> "game?source=topic&topic=${Uri.encode(source.topic)}"
                         }
@@ -164,6 +167,7 @@ fun TajikDictionaryRoot(
                         navController.navigate(route)
                     },
                     onOpenPlacement = { navController.navigate("placement") },
+                    onOpenVocabulary = { navController.navigate("vocabulary") },
                 )
             }
             composable(TopTab.SAVED.route) {
@@ -203,6 +207,8 @@ fun TajikDictionaryRoot(
                 val src = entry.arguments?.getString("source") ?: "smart"
                 val topic = entry.arguments?.getString("topic")
                 val deckSource = when {
+                    src == "due" -> GameDeckSource.DueReviews
+                    src == "weak" -> GameDeckSource.WeakWords
                     src == "saved" -> GameDeckSource.Saved
                     src == "topic" && !topic.isNullOrBlank() -> GameDeckSource.Topic(topic)
                     else -> GameDeckSource.SmartMix
@@ -242,6 +248,14 @@ fun TajikDictionaryRoot(
                     userData = container.userData,
                     settings = container.settings,
                     onBack = { navController.popBackStack() },
+                )
+            }
+            composable("vocabulary") {
+                VocabularyListScreen(
+                    userData = container.userData,
+                    onBack = { navController.popBackStack() },
+                    onEntryClick = openEntry,
+                    onDrillWeak = { navController.navigate("game?source=weak") },
                 )
             }
             composable(

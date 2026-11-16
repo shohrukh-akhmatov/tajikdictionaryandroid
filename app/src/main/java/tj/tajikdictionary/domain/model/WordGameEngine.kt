@@ -291,6 +291,66 @@ object WordGameEngine {
         return picked
     }
 
+    fun buildDueRoundQueue(
+        candidates: List<WordCardCandidate>,
+        progressById: Map<Long, WordProgressSnapshot>,
+        nowMs: Long = System.currentTimeMillis(),
+        roundSize: Int = DEFAULT_ROUND_SIZE,
+    ): List<WordCardCandidate> {
+        val usable = candidates.filter { it.preview.isNotBlank() }
+        if (usable.isEmpty() || roundSize <= 0) return emptyList()
+
+        val activeStudied = usable.filter { candidate ->
+            val p = progressById[candidate.entryId] ?: return@filter false
+            !p.isKnownSkipped && p.lastReviewedAtMs != null
+        }
+
+        val dueSorted = activeStudied.mapNotNull { candidate ->
+            val p = progressById[candidate.entryId] ?: return@mapNotNull null
+            if (p.nextReviewAtMs > nowMs) return@mapNotNull null
+            val elapsed = (nowMs - (p.lastReviewedAtMs ?: nowMs)).toDouble() / DAY_MS.toDouble()
+            candidate to retrievalProbability(p.stabilityDays, elapsed)
+        }.sortedWith(
+            compareBy<Pair<WordCardCandidate, Double>> { it.second }
+                .thenByDescending { it.first.frequency },
+        ).map { it.first }
+
+        if (dueSorted.size >= roundSize) return dueSorted.take(roundSize)
+
+        val picked = dueSorted.toMutableList()
+        val seen = picked.map { it.entryId }.toMutableSet()
+        val soonest = activeStudied
+            .filter { it.entryId !in seen }
+            .sortedWith(
+                compareBy<WordCardCandidate> { progressById[it.entryId]?.nextReviewAtMs ?: Long.MAX_VALUE }
+                    .thenByDescending { it.frequency },
+            )
+        for (item in soonest) {
+            if (picked.size >= roundSize) break
+            picked += item
+            seen += item.entryId
+        }
+        return picked
+    }
+
+    fun buildWeakRoundQueue(
+        candidates: List<WordCardCandidate>,
+        progressById: Map<Long, WordProgressSnapshot>,
+        roundSize: Int = DEFAULT_ROUND_SIZE,
+    ): List<WordCardCandidate> {
+        val usable = candidates.filter { it.preview.isNotBlank() }
+        if (usable.isEmpty() || roundSize <= 0) return emptyList()
+
+        return usable.filter { candidate ->
+            val p = progressById[candidate.entryId] ?: return@filter false
+            !p.isKnownSkipped && (p.lapses > 0 || (p.lastReviewedAtMs != null && p.masteryStage <= 1) || p.stabilityDays < 2.0)
+        }.sortedWith(
+            compareByDescending<WordCardCandidate> { progressById[it.entryId]?.lapses ?: 0 }
+                .thenBy { progressById[it.entryId]?.stabilityDays ?: 0.0 }
+                .thenByDescending { it.frequency },
+        ).take(roundSize)
+    }
+
     fun challengeKind(masteryStage: Int, headword: String): ChallengeKind {
         val len = headword.trim().length
         return when {
@@ -382,9 +442,9 @@ object WordGameEngine {
         val example = exampleTg?.trim().orEmpty()
         val target = targetHeadword.trim()
         if (example.isEmpty() || target.isEmpty()) return null
-        val index = example.indexOf(target, ignoreCase = true)
-        if (index < 0) return null
-        return example.replaceRange(index, index + target.length, "____")
+        val regex = Regex("(?iu)(?<!\\p{L})${Regex.escape(target)}\\p{L}*")
+        val match = regex.find(example) ?: return null
+        return example.replaceRange(match.range, "____")
     }
 
     fun checkTypedAnswer(input: String, target: String): AnswerCheckResult {
@@ -465,7 +525,64 @@ object WordGameEngine {
         )
     }
 
+    fun evaluateClassicFlashcard(
+        existing: WordProgressSnapshot?,
+        entryId: Long,
+        rating: ReviewRating,
+        intervalDays: Int,
+        nextDueMs: Long,
+        nowMs: Long = System.currentTimeMillis(),
+    ): Pair<AnswerEvaluation, Boolean> {
+        val base = existing ?: WordProgressSnapshot(entryId = entryId)
+        val wasUnlearned = base.lastReviewedAtMs == null
+        val isCorrect = rating != ReviewRating.AGAIN
+        val nextStage: Int
+        val nextStability: Double
+        val nextLapses: Int
+        val xp: Int
+        when (rating) {
+            ReviewRating.AGAIN -> {
+                nextStage = max(0, base.masteryStage - 1)
+                nextStability = max(0.25, min(0.5, max(1, intervalDays) * 0.5))
+                nextLapses = base.lapses + 1
+                xp = 0
+            }
+            ReviewRating.GOOD -> {
+                nextStage = min(4, max(1, base.masteryStage + 1))
+                nextStability = max(1.0, intervalDays.toDouble())
+                nextLapses = base.lapses
+                xp = 8
+            }
+            ReviewRating.EASY -> {
+                nextStage = min(4, base.masteryStage + 1)
+                nextStability = max(2.0, intervalDays.toDouble())
+                nextLapses = base.lapses
+                xp = 12
+            }
+        }
+        val eval = AnswerEvaluation(
+            updated = base.copy(
+                masteryStage = nextStage,
+                stabilityDays = nextStability,
+                repetitions = base.repetitions + 1,
+                lapses = nextLapses,
+                lastReviewedAtMs = nowMs,
+                nextReviewAtMs = nextDueMs,
+                isKnownSkipped = false,
+            ),
+            xpAwarded = xp,
+            newlyLearned = wasUnlearned,
+        )
+        return eval to isCorrect
+    }
+
     fun reinsertIndex(remainingCount: Int): Int = min(3, max(0, remainingCount))
+
+    private fun previewGlossTokens(preview: String): Set<String> =
+        preview.split(',')
+            .map { it.trim().lowercase() }
+            .filter { it.isNotEmpty() }
+            .toSet()
 
     fun buildPlacementQuestions(pool: List<WordCardCandidate>): List<PlacementQuestion> {
         val usable = pool.filter { it.preview.isNotBlank() }
@@ -485,10 +602,13 @@ object WordGameEngine {
                 .shuffled()
             for (candidate in tierWords.take(3)) {
                 usedIds += candidate.entryId
+                val candidateTokens = previewGlossTokens(candidate.preview)
                 val seenMeanings = HashSet<String>().apply { add(candidate.preview.lowercase()) }
                 val distractors = ArrayList<String>(3)
                 for (other in usable.shuffled()) {
                     if (other.entryId == candidate.entryId) continue
+                    val otherTokens = previewGlossTokens(other.preview)
+                    if (candidateTokens.any { it in otherTokens }) continue
                     val key = other.preview.lowercase()
                     if (seenMeanings.add(key)) {
                         distractors += other.preview
@@ -511,7 +631,8 @@ object WordGameEngine {
             val group = answers.filter { it.question.tier == tier }
             if (group.isEmpty()) return false
             val right = group.count { it.isCorrect }
-            return right >= max(2, (group.size + 1) / 2)
+            val required = min(group.size, max(2, (group.size + 1) / 2))
+            return right >= required
         }
 
         val level = when {
