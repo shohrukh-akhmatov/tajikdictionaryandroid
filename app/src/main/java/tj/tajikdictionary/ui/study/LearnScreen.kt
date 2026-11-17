@@ -1,5 +1,7 @@
 package tj.tajikdictionary.ui.study
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,9 +37,9 @@ import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Button
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,6 +76,8 @@ import tj.tajikdictionary.data.user.toSnapshot
 import tj.tajikdictionary.domain.model.LexiconStats
 import tj.tajikdictionary.domain.model.TopicCount
 import tj.tajikdictionary.domain.model.WordGameEngine
+import tj.tajikdictionary.ui.components.AppCard
+import tj.tajikdictionary.ui.components.SectionHeader
 import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
@@ -125,20 +131,156 @@ fun LearnScreen(
         else -> stringResource(R.string.level_master)
     }
 
+    val animatedRecognition by animateFloatAsState(
+        targetValue = (summary.textRecognitionPercent.toFloat() / 100f).coerceIn(0f, 1f),
+        animationSpec = tween(600),
+        label = "recognitionRing",
+    )
+
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_learn)) }) },
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+                title = { Text(stringResource(R.string.tab_learn), fontWeight = FontWeight.Bold) },
+            )
+        },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // Lingvist-style Text Recognition % + CEFR Placement Card
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            // Word Trainer Hero Card (primary learning action at top)
+            AppCard(
+                cornerRadius = 20.dp,
+                borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                stringResource(R.string.game_trainer_title),
+                                style = MaterialTheme.typography.titleLarge,
+                            )
+                            Text(
+                                if (summary.dueNowCount > 0) {
+                                    stringResource(R.string.game_due_reviews, summary.dueNowCount)
+                                } else {
+                                    stringResource(R.string.game_trainer_sub)
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (summary.dueNowCount > 0) {
+                            Surface(
+                                color = Color(0xFFE66A00),
+                                shape = RoundedCornerShape(999.dp),
+                            ) {
+                                Text(
+                                    "${summary.dueNowCount}",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(end = 4.dp),
+                    ) {
+                        item(key = "smart_mix") {
+                            TrainerDeckChip(
+                                selected = selectedSource == GameDeckSource.SmartMix,
+                                label = stringResource(R.string.game_smart_mix),
+                                onClick = { selectedSource = GameDeckSource.SmartMix },
+                            )
+                        }
+                        if (summary.dueNowCount > 0) {
+                            item(key = "due_reviews") {
+                                TrainerDeckChip(
+                                    selected = selectedSource == GameDeckSource.DueReviews,
+                                    label = "${stringResource(R.string.game_due_reviews_chip)} (${summary.dueNowCount})",
+                                    onClick = { selectedSource = GameDeckSource.DueReviews },
+                                )
+                            }
+                        }
+                        val weakCount = flashcards.count {
+                            !it.isKnownSkipped && (it.lapses > 0 || (it.lastReviewedAt != null && it.masteryStage <= 1) || it.stabilityDays < 2.0)
+                        }
+                        if (weakCount > 0) {
+                            item(key = "weak_words") {
+                                TrainerDeckChip(
+                                    selected = selectedSource == GameDeckSource.WeakWords,
+                                    label = "${stringResource(R.string.game_weak_words)} ($weakCount)",
+                                    onClick = { selectedSource = GameDeckSource.WeakWords },
+                                )
+                            }
+                        }
+                        if (favorites.isNotEmpty()) {
+                            item(key = "saved") {
+                                TrainerDeckChip(
+                                    selected = selectedSource == GameDeckSource.Saved,
+                                    label = stringResource(R.string.tab_saved),
+                                    onClick = { selectedSource = GameDeckSource.Saved },
+                                )
+                            }
+                        }
+                        items(topics, key = { it.topic }) { item ->
+                            val topicSource = GameDeckSource.Topic(item.topic)
+                            TrainerDeckChip(
+                                selected = selectedSource == topicSource,
+                                label = item.topic.replaceFirstChar { it.uppercase() },
+                                onClick = { selectedSource = topicSource },
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = { onStartGame(selectedSource) },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.size(6.dp))
+                        Text(
+                            stringResource(R.string.game_start_round),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+
+                    val topicName = (selectedSource as? GameDeckSource.Topic)?.topic
+                    OutlinedButton(
+                        onClick = { onOpenFlashcards(topicName) },
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        Icon(Icons.Filled.Style, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text(stringResource(R.string.game_classic_flashcards))
+                    }
+                }
+            }
+
+            // Text Recognition % + CEFR Placement Card
+            AppCard {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -149,9 +291,9 @@ fun LearnScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         val primaryColor = MaterialTheme.colorScheme.primary
-                        val trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        val trackColor = MaterialTheme.colorScheme.surfaceContainerHigh
                         Box(
-                            modifier = Modifier.size(82.dp),
+                            modifier = Modifier.size(84.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -166,7 +308,7 @@ fun LearnScreen(
                                 drawArc(
                                     color = primaryColor,
                                     startAngle = -90f,
-                                    sweepAngle = (summary.textRecognitionPercent.toFloat() / 100f).coerceIn(0f, 1f) * 360f,
+                                    sweepAngle = animatedRecognition * 360f,
                                     useCenter = false,
                                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
                                 )
@@ -186,11 +328,10 @@ fun LearnScreen(
                             }
                         }
 
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
                                 stringResource(R.string.hero_everyday_recognized),
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
                             )
                             Text(
                                 "${summary.cefrLevel.code} · ${cefrTitle(summary.cefrLevel)}",
@@ -209,6 +350,7 @@ fun LearnScreen(
                     OutlinedButton(
                         onClick = onOpenPlacement,
                         modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
                     ) {
                         Icon(Icons.Filled.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.size(8.dp))
@@ -226,7 +368,7 @@ fun LearnScreen(
             }
 
             // Streak & Level Card
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            AppCard {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -240,17 +382,27 @@ fun LearnScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
-                                Icons.Filled.LocalFireDepartment,
-                                contentDescription = null,
-                                tint = if (summary.currentStreakDays > 0) Color(0xFFFF6D00) else MaterialTheme.colorScheme.outline,
-                                modifier = Modifier.size(30.dp),
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (summary.currentStreakDays > 0) Color(0xFFFF6D00).copy(alpha = 0.14f)
+                                        else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.Filled.LocalFireDepartment,
+                                    contentDescription = null,
+                                    tint = if (summary.currentStreakDays > 0) Color(0xFFFF6D00) else MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
                             Column {
                                 Text(
                                     stringResource(R.string.game_streak_days, summary.currentStreakDays),
                                     style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
                                 )
                                 Text(
                                     stringResource(R.string.game_best_streak, summary.longestStreakDays),
@@ -265,7 +417,6 @@ fun LearnScreen(
                                 "Lv. ${summary.level} · $levelTitle",
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold,
                             )
                             Text(
                                 "${summary.totalXp} XP",
@@ -275,155 +426,59 @@ fun LearnScreen(
                         }
                     }
 
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(stringResource(R.string.game_todays_goal), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                stringResource(R.string.game_todays_goal),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                             Text(
                                 "${summary.todayReviewed} / ${summary.dailyGoal}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (summary.todayReviewed >= summary.dailyGoal) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (summary.todayReviewed >= summary.dailyGoal) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.SemiBold,
                             )
                         }
                         LinearProgressIndicator(
-                            progress = { min(summary.todayReviewed, summary.dailyGoal).toFloat() / summary.dailyGoal.toFloat() },
-                            modifier = Modifier.fillMaxWidth(),
+                            progress = { min(summary.todayReviewed, summary.dailyGoal).toFloat() / max(1, summary.dailyGoal).toFloat() },
+                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(999.dp)),
+                            trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         )
                     }
 
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(stringResource(R.string.game_level_progress), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("${summary.xpInCurrentLevel} / ${summary.xpForNextLevel} XP", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        LinearProgressIndicator(
-                            progress = { summary.xpInCurrentLevel.toFloat() / summary.xpForNextLevel.toFloat() },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-            }
-
-            // Word Trainer Card
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                stringResource(R.string.game_trainer_title),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
+                                stringResource(R.string.game_level_progress),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
-                                if (summary.dueNowCount > 0) {
-                                    stringResource(R.string.game_due_reviews, summary.dueNowCount)
-                                } else {
-                                    stringResource(R.string.game_trainer_sub)
-                                },
-                                style = MaterialTheme.typography.bodySmall,
+                                "${summary.xpInCurrentLevel} / ${summary.xpForNextLevel} XP",
+                                style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        if (summary.dueNowCount > 0) {
-                            Surface(color = Color(0xFFFF6D00), shape = RoundedCornerShape(999.dp)) {
-                                Text(
-                                    "${summary.dueNowCount}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                )
-                            }
-                        }
-                    }
-
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(end = 4.dp),
-                    ) {
-                        item(key = "smart_mix") {
-                            FilterChip(
-                                selected = selectedSource == GameDeckSource.SmartMix,
-                                onClick = { selectedSource = GameDeckSource.SmartMix },
-                                label = { Text(stringResource(R.string.game_smart_mix)) },
-                            )
-                        }
-                        if (summary.dueNowCount > 0) {
-                            item(key = "due_reviews") {
-                                FilterChip(
-                                    selected = selectedSource == GameDeckSource.DueReviews,
-                                    onClick = { selectedSource = GameDeckSource.DueReviews },
-                                    label = { Text("${stringResource(R.string.game_due_reviews_chip)} (${summary.dueNowCount})") },
-                                )
-                            }
-                        }
-                        val weakCount = flashcards.count { !it.isKnownSkipped && (it.lapses > 0 || (it.lastReviewedAt != null && it.masteryStage <= 1) || it.stabilityDays < 2.0) }
-                        if (weakCount > 0) {
-                            item(key = "weak_words") {
-                                FilterChip(
-                                    selected = selectedSource == GameDeckSource.WeakWords,
-                                    onClick = { selectedSource = GameDeckSource.WeakWords },
-                                    label = { Text("${stringResource(R.string.game_weak_words)} ($weakCount)") },
-                                )
-                            }
-                        }
-                        if (favorites.isNotEmpty()) {
-                            item(key = "saved") {
-                                FilterChip(
-                                    selected = selectedSource == GameDeckSource.Saved,
-                                    onClick = { selectedSource = GameDeckSource.Saved },
-                                    label = { Text(stringResource(R.string.tab_saved)) },
-                                )
-                            }
-                        }
-                        items(topics, key = { it.topic }) { item ->
-                            val topicSource = GameDeckSource.Topic(item.topic)
-                            FilterChip(
-                                selected = selectedSource == topicSource,
-                                onClick = { selectedSource = topicSource },
-                                label = { Text(item.topic.replaceFirstChar { it.uppercase() }) },
-                            )
-                        }
-                    }
-
-                    Button(
-                        onClick = { onStartGame(selectedSource) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.size(6.dp))
-                        Text(stringResource(R.string.game_start_round))
-                    }
-
-                    val topicName = (selectedSource as? GameDeckSource.Topic)?.topic
-                    OutlinedButton(
-                        onClick = { onOpenFlashcards(topicName) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(Icons.Filled.Style, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.size(6.dp))
-                        Text(stringResource(R.string.game_classic_flashcards))
+                        LinearProgressIndicator(
+                            progress = { summary.xpInCurrentLevel.toFloat() / max(1, summary.xpForNextLevel).toFloat() },
+                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(999.dp)),
+                            trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        )
                     }
                 }
             }
 
-            // Study Analytics Card (Words known, Study time, Active days, Accuracy + 7-day chart)
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            // Study Analytics Card
+            AppCard {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
                         stringResource(R.string.analytics_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
                     )
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -454,12 +509,11 @@ fun LearnScreen(
                             value = "${summary.overallAccuracyPercent}%",
                             label = stringResource(R.string.analytics_reviews_count, summary.totalReviews),
                             icon = Icons.Filled.TrackChanges,
-                            color = Color(0xFF2E7D32),
+                            color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.weight(1f),
                         )
                     }
 
-                    // 7-day bar chart
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
                             stringResource(R.string.analytics_last_7_days),
@@ -478,9 +532,9 @@ fun LearnScreen(
                             summary.recent7Days.forEach { day ->
                                 val fraction = max(0.08f, day.wordsReviewed.toFloat() / max(1, maxCount).toFloat())
                                 val barColor = when {
-                                    day.metGoal -> Color(0xFF2E7D32)
-                                    day.wordsReviewed > 0 -> MaterialTheme.colorScheme.primary
-                                    else -> MaterialTheme.colorScheme.surfaceVariant
+                                    day.metGoal -> MaterialTheme.colorScheme.primary
+                                    day.wordsReviewed > 0 -> MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                                    else -> MaterialTheme.colorScheme.surfaceContainerHigh
                                 }
                                 Column(
                                     modifier = Modifier.weight(1f),
@@ -497,9 +551,9 @@ fun LearnScreen(
                                     Spacer(Modifier.height(2.dp))
                                     Box(
                                         modifier = Modifier
-                                            .width(18.dp)
+                                            .width(20.dp)
                                             .height((52.dp * fraction))
-                                            .clip(RoundedCornerShape(4.dp))
+                                            .clip(RoundedCornerShape(6.dp))
                                             .background(barColor),
                                     )
                                     Spacer(Modifier.height(4.dp))
@@ -516,10 +570,10 @@ fun LearnScreen(
             }
 
             // Vocabulary Progress & Frequency Tiers
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            AppCard {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -528,8 +582,7 @@ fun LearnScreen(
                     ) {
                         Text(
                             stringResource(R.string.game_vocab_progress),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium,
                         )
                         TextButton(onClick = onOpenVocabulary) {
                             Text(stringResource(R.string.vocab_open_browser))
@@ -544,9 +597,9 @@ fun LearnScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        VocabCountTile(summary.encounteredCount, stringResource(R.string.game_seen), MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+                        VocabCountTile(summary.encounteredCount, stringResource(R.string.game_seen), Color(0xFF2459C7), Modifier.weight(1f))
                         VocabCountTile(summary.learningCount, stringResource(R.string.game_learning), Color(0xFFE65100), Modifier.weight(1f))
-                        VocabCountTile(summary.masteredCount, stringResource(R.string.game_mastered), Color(0xFF2E7D32), Modifier.weight(1f))
+                        VocabCountTile(summary.masteredCount, stringResource(R.string.game_mastered), MaterialTheme.colorScheme.primary, Modifier.weight(1f))
                     }
 
                     summary.tierBreakdown.forEach { tier ->
@@ -558,7 +611,7 @@ fun LearnScreen(
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(tierTitle, style = MaterialTheme.typography.labelSmall)
+                                Text(tierTitle, style = MaterialTheme.typography.labelMedium)
                                 Text(
                                     "${tier.knownCount} / ${tier.totalCount}",
                                     style = MaterialTheme.typography.labelSmall,
@@ -567,7 +620,8 @@ fun LearnScreen(
                             }
                             LinearProgressIndicator(
                                 progress = { (tier.knownCount.toFloat() / max(1, tier.totalCount).toFloat()).coerceIn(0f, 1f) },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(999.dp)),
+                                trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             )
                         }
                     }
@@ -575,11 +629,7 @@ fun LearnScreen(
             }
 
             // Achievements
-            Text(
-                stringResource(R.string.game_achievements),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            SectionHeader(title = stringResource(R.string.game_achievements))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 summary.badges.chunked(2).forEach { pair ->
                     Row(
@@ -595,19 +645,32 @@ fun LearnScreen(
                                 "master_25" -> Triple(R.string.badge_master_25, R.string.badge_master_25_sub, Icons.Filled.EmojiEvents)
                                 else -> Triple(R.string.badge_reviews_100, R.string.badge_reviews_100_sub, Icons.Filled.Bolt)
                             }
-                            ElevatedCard(
-                                modifier = Modifier.weight(1f).alpha(if (badge.unlocked) 1f else 0.55f),
+                            AppCard(
+                                modifier = Modifier.weight(1f).alpha(if (badge.unlocked) 1f else 0.58f),
+                                cornerRadius = 16.dp,
                             ) {
                                 Row(
                                     modifier = Modifier.padding(12.dp),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Icon(
-                                        icon,
-                                        contentDescription = null,
-                                        tint = if (badge.unlocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (badge.unlocked) MaterialTheme.colorScheme.primaryContainer
+                                                else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            icon,
+                                            contentDescription = null,
+                                            tint = if (badge.unlocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
                                     Column {
                                         Text(stringResource(titleText), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                                         Text(stringResource(subText), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -618,8 +681,28 @@ fun LearnScreen(
                     }
                 }
             }
+
+            Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+@Composable
+private fun TrainerDeckChip(
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+        label = { Text(label) },
+    )
 }
 
 @Composable
@@ -632,11 +715,11 @@ private fun AnalyticsTile(
 ) {
     Surface(
         color = color.copy(alpha = 0.09f),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         modifier = modifier,
     ) {
         Row(
-            modifier = Modifier.padding(10.dp),
+            modifier = Modifier.padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -653,11 +736,11 @@ private fun AnalyticsTile(
 private fun VocabCountTile(count: Int, label: String, color: Color, modifier: Modifier = Modifier) {
     Surface(
         color = color.copy(alpha = 0.1f),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         modifier = modifier,
     ) {
         Column(
-            modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+            modifier = Modifier.padding(vertical = 10.dp, horizontal = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text("$count", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = color)

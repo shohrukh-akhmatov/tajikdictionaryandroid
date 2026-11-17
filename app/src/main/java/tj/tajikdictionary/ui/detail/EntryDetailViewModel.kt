@@ -56,10 +56,10 @@ class EntryDetailViewModel(
 
     init {
         viewModelScope.launch {
-            val detail = dictionary.detail(entryId)
+            val mode = settings.mode.first()
+            val detail = dictionary.detail(entryId, mode)
             loaded.value = detail to false
             if (detail != null) {
-                val mode = settings.mode.first()
                 userData.recordView(
                     entryId = detail.entry.id,
                     language = detail.entry.language,

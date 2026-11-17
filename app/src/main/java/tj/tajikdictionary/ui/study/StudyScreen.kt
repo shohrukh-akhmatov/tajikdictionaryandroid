@@ -31,6 +31,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.draw.clip
+import tj.tajikdictionary.core.text.TajikTransliterator
+import tj.tajikdictionary.ui.components.AppCard
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -114,8 +118,12 @@ fun StudyScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
                 title = {
                     Text(
                         selectedTopic?.let { stringResource(R.string.study_topic_title, it) }
@@ -219,11 +227,12 @@ fun StudyScreen(
                     )
                     Spacer(Modifier.height(16.dp))
 
-                    ElevatedCard(
+                    AppCard(
+                        cornerRadius = 20.dp,
+                        onClick = { flipped = !flipped },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f)
-                            .clickable { flipped = !flipped },
+                            .weight(1f),
                     ) {
                         Box(
                             modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -240,6 +249,17 @@ fun StudyScreen(
                                     fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center,
                                 )
+                                if (card.language == Language.TAJIK) {
+                                    val latin = TajikTransliterator.toLatin(card.headword)
+                                    if (latin.isNotEmpty()) {
+                                        Text(
+                                            text = "/$latin/",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
+                                }
                                 if (flipped) {
                                     Text(
                                         text = card.preview.ifEmpty { "—" },

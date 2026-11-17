@@ -274,13 +274,13 @@ class DictionaryRepository(
         ).use { c -> c.mapRows { toEntry() }.firstOrNull() }
     }
 
-    suspend fun detail(id: Long): EntryDetail? = withContext(io) {
+    suspend fun detail(id: Long, mode: DictionaryMode = DictionaryMode.TJ_RU): EntryDetail? = withContext(io) {
         val entry = entry(id) ?: return@withContext null
         val translations = db.get().rawQuery(
             """
-            SELECT t2.id, t2.lang, t2.headword, t2.pos, t.note
+            SELECT t2.id, t2.lang, t2.headword, t2.pos, t.note, t.position
             FROM translations t JOIN entries t2 ON t2.id = t.to_id
-            WHERE t.from_id = ? ORDER BY t2.lang, t.position
+            WHERE t.from_id = ? ORDER BY t.position, t2.lang
             """.trimIndent(),
             arrayOf(id.toString()),
         ).use { c ->
@@ -291,15 +291,132 @@ class DictionaryRepository(
                     headword = getString(2),
                     pos = PartOfSpeech.fromCode(stringOrNull(3)),
                     note = stringOrNull(4),
+                    position = getInt(5),
                 )
             }
         }
-        val examples = db.get().rawQuery(
+        var examples = db.get().rawQuery(
             "SELECT tg, ru, en FROM examples WHERE entry_id = ?",
             arrayOf(id.toString()),
         ).use { c -> c.mapRows { Example(getString(0), stringOrNull(1), stringOrNull(2)) } }
 
-        EntryDetail(entry, translations.groupBy { it.language }, examples)
+        // Reverse-direction entries (RU/EN) link examples via their primary Tajik translation.
+        if (examples.isEmpty() && entry.language != Language.TAJIK) {
+            val primaryTgId = translations.firstOrNull { it.language == Language.TAJIK }?.entryId
+            if (primaryTgId != null) {
+                examples = db.get().rawQuery(
+                    "SELECT tg, ru, en FROM examples WHERE entry_id = ? LIMIT 3",
+                    arrayOf(primaryTgId.toString()),
+                ).use { c -> c.mapRows { Example(getString(0), stringOrNull(1), stringOrNull(2)) } }
+            }
+        }
+
+        val entryKey = TextNormalizer.searchKey(entry.headword)
+        val previewPartner = if (entry.language == Language.TAJIK) mode.partner.code else Language.TAJIK.code
+
+        val homographs = if (entryKey.isNotEmpty()) {
+            db.get().rawQuery(
+                """
+                SELECT e2.id, e2.lang, e2.headword, e2.pos,
+                       (SELECT group_concat(h, ', ') FROM (
+                            SELECT t2.headword AS h
+                            FROM translations t JOIN entries t2 ON t2.id = t.to_id
+                            WHERE t.from_id = e2.id AND t2.lang = ?
+                            ORDER BY t.position LIMIT 3)) AS preview
+                FROM entries e2
+                WHERE e2.lang = ? AND e2.search_key = ? AND e2.id != ?
+                ORDER BY e2.frequency DESC, e2.id ASC
+                LIMIT 6
+                """.trimIndent(),
+                arrayOf(previewPartner, entry.language.code, entryKey, id.toString()),
+            ).use { c ->
+                c.mapRows {
+                    SearchResult(
+                        id = getLong(0),
+                        language = Language.fromCode(getString(1)),
+                        headword = getString(2),
+                        pos = PartOfSpeech.fromCode(stringOrNull(3)),
+                        preview = stringOrNull(4).orEmpty(),
+                    )
+                }
+            }
+        } else emptyList()
+
+        val synonyms = db.get().rawQuery(
+            """
+            SELECT e2.id, e2.lang, e2.headword, e2.pos,
+                   (SELECT group_concat(h, ', ') FROM (
+                        SELECT t3.headword AS h
+                        FROM translations t JOIN entries t3 ON t3.id = t.to_id
+                        WHERE t.from_id = e2.id AND t3.lang = ?
+                        ORDER BY t.position LIMIT 2)) AS preview,
+                   COUNT(*) AS shared
+            FROM translations t1
+            JOIN translations t_rev ON t_rev.from_id = t1.to_id
+            JOIN entries e2 ON e2.id = t_rev.to_id
+            WHERE t1.from_id = ? AND e2.lang = ? AND e2.id != ? AND e2.search_key != ?
+            GROUP BY e2.id
+            ORDER BY shared DESC, e2.frequency DESC
+            LIMIT 8
+            """.trimIndent(),
+            arrayOf(previewPartner, id.toString(), entry.language.code, id.toString(), entryKey),
+        ).use { c ->
+            c.mapRows {
+                SearchResult(
+                    id = getLong(0),
+                    language = Language.fromCode(getString(1)),
+                    headword = getString(2),
+                    pos = PartOfSpeech.fromCode(stringOrNull(3)),
+                    preview = stringOrNull(4).orEmpty(),
+                )
+            }
+        }
+
+        val synonymIds = synonyms.map { it.id }.toHashSet()
+        val homographIds = homographs.map { it.id }.toHashSet()
+        val rootKey = when {
+            entryKey.length >= 6 -> entryKey.dropLast(1)
+            else -> entryKey
+        }
+        val relatedWords = if (rootKey.length >= 3) {
+            db.get().rawQuery(
+                """
+                SELECT e2.id, e2.lang, e2.headword, e2.pos,
+                       (SELECT group_concat(h, ', ') FROM (
+                            SELECT t2.headword AS h
+                            FROM translations t JOIN entries t2 ON t2.id = t.to_id
+                            WHERE t.from_id = e2.id AND t2.lang = ?
+                            ORDER BY t.position LIMIT 2)) AS preview
+                FROM entries e2
+                WHERE e2.lang = ?
+                  AND e2.search_key >= ?
+                  AND e2.search_key < ? || char(65535)
+                  AND e2.id != ?
+                ORDER BY e2.frequency DESC, length(e2.headword) ASC
+                LIMIT 12
+                """.trimIndent(),
+                arrayOf(previewPartner, entry.language.code, rootKey, rootKey, id.toString()),
+            ).use { c ->
+                c.mapRows {
+                    SearchResult(
+                        id = getLong(0),
+                        language = Language.fromCode(getString(1)),
+                        headword = getString(2),
+                        pos = PartOfSpeech.fromCode(stringOrNull(3)),
+                        preview = stringOrNull(4).orEmpty(),
+                    )
+                }
+            }.filter { it.id !in synonymIds && it.id !in homographIds }.take(8)
+        } else emptyList()
+
+        EntryDetail(
+            entry = entry,
+            translations = translations.groupBy { it.language },
+            examples = examples,
+            homographs = homographs,
+            synonyms = synonyms,
+            relatedWords = relatedWords,
+        )
     }
 
     /** Deterministic, offline word of the day — identical algorithm on iOS (§4.4). */

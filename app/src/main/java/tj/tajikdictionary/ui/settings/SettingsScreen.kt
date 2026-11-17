@@ -14,11 +14,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.ElevatedCard
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Feedback
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Update
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -28,14 +37,17 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +63,9 @@ import tj.tajikdictionary.data.user.FavoritesBackup
 import tj.tajikdictionary.data.user.UserDataRepository
 import tj.tajikdictionary.domain.model.DictionaryInfo
 import tj.tajikdictionary.domain.model.DictionaryMode
+import tj.tajikdictionary.ui.components.AppCard
 import tj.tajikdictionary.ui.components.ModeSwitcher
+import tj.tajikdictionary.ui.components.SectionHeader
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -141,9 +155,23 @@ fun SettingsScreen(
         }
     }
 
+    val transparentRow = ListItemDefaults.colors(containerColor = Color.Transparent)
+    val segmentedColors = SegmentedButtonDefaults.colors(
+        activeContainerColor = MaterialTheme.colorScheme.primaryContainer,
+        activeContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    )
+
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_settings)) }) },
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+                title = { Text(stringResource(R.string.tab_settings), fontWeight = FontWeight.Bold) },
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(
@@ -154,162 +182,232 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(stringResource(R.string.settings_default_mode), style = MaterialTheme.typography.titleSmall)
-            ModeSwitcher(
-                mode = mode,
-                onModeChange = { newMode -> scope.launch { settings.setMode(newMode) } },
-            )
+            SectionHeader(title = stringResource(R.string.settings_default_mode))
+            AppCard {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    ModeSwitcher(
+                        mode = mode,
+                        onModeChange = { newMode -> scope.launch { settings.setMode(newMode) } },
+                    )
+                }
+            }
 
-            Text(stringResource(R.string.settings_appearance), style = MaterialTheme.typography.titleSmall)
-            val themes = ThemeSetting.entries
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                themes.forEachIndexed { index, item ->
-                    SegmentedButton(
-                        selected = item == theme,
-                        onClick = { scope.launch { settings.setTheme(item) } },
-                        shape = SegmentedButtonDefaults.itemShape(index, themes.size),
-                    ) {
-                        Text(
-                            when (item) {
-                                ThemeSetting.SYSTEM -> stringResource(R.string.theme_system)
-                                ThemeSetting.LIGHT -> stringResource(R.string.theme_light)
-                                ThemeSetting.DARK -> stringResource(R.string.theme_dark)
-                            },
-                        )
+            SectionHeader(title = stringResource(R.string.settings_appearance))
+            AppCard {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    val themes = ThemeSetting.entries
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        themes.forEachIndexed { index, item ->
+                            SegmentedButton(
+                                selected = item == theme,
+                                onClick = { scope.launch { settings.setTheme(item) } },
+                                shape = SegmentedButtonDefaults.itemShape(index, themes.size),
+                                colors = segmentedColors,
+                            ) {
+                                Text(
+                                    when (item) {
+                                        ThemeSetting.SYSTEM -> stringResource(R.string.theme_system)
+                                        ThemeSetting.LIGHT -> stringResource(R.string.theme_light)
+                                        ThemeSetting.DARK -> stringResource(R.string.theme_dark)
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        stringResource(R.string.settings_font_size),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    val scales = FontScaleSetting.entries
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        scales.forEachIndexed { index, item ->
+                            SegmentedButton(
+                                selected = item == fontScale,
+                                onClick = { scope.launch { settings.setFontScale(item) } },
+                                shape = SegmentedButtonDefaults.itemShape(index, scales.size),
+                                colors = segmentedColors,
+                            ) {
+                                Text(
+                                    when (item) {
+                                        FontScaleSetting.SMALL -> stringResource(R.string.font_small)
+                                        FontScaleSetting.MEDIUM -> stringResource(R.string.font_medium)
+                                        FontScaleSetting.LARGE -> stringResource(R.string.font_large)
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        stringResource(R.string.settings_speech_speed),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    val speeds = listOf(0.75f to "0.75×", 1.0f to "1.0×")
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        speeds.forEachIndexed { index, (rate, label) ->
+                            SegmentedButton(
+                                selected = kotlin.math.abs(speechRate - rate) < 0.05f,
+                                onClick = { scope.launch { settings.setSpeechRate(rate) } },
+                                shape = SegmentedButtonDefaults.itemShape(index, speeds.size),
+                                colors = segmentedColors,
+                            ) { Text(label) }
+                        }
                     }
                 }
             }
 
-            Text(stringResource(R.string.settings_speech_speed), style = MaterialTheme.typography.titleSmall)
-            val speeds = listOf(0.75f to "0.75×", 1.0f to "1.0×")
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                speeds.forEachIndexed { index, (rate, label) ->
-                    SegmentedButton(
-                        selected = kotlin.math.abs(speechRate - rate) < 0.05f,
-                        onClick = { scope.launch { settings.setSpeechRate(rate) } },
-                        shape = SegmentedButtonDefaults.itemShape(index, speeds.size),
-                    ) { Text(label) }
-                }
-            }
-
-            Text(stringResource(R.string.settings_font_size), style = MaterialTheme.typography.titleSmall)
-            val scales = FontScaleSetting.entries
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                scales.forEachIndexed { index, item ->
-                    SegmentedButton(
-                        selected = item == fontScale,
-                        onClick = { scope.launch { settings.setFontScale(item) } },
-                        shape = SegmentedButtonDefaults.itemShape(index, scales.size),
-                    ) {
-                        Text(
-                            when (item) {
-                                FontScaleSetting.SMALL -> stringResource(R.string.font_small)
-                                FontScaleSetting.MEDIUM -> stringResource(R.string.font_medium)
-                                FontScaleSetting.LARGE -> stringResource(R.string.font_large)
-                            },
-                        )
+            SectionHeader(title = stringResource(R.string.settings_learning))
+            AppCard {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        stringResource(R.string.settings_daily_goal),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    val goals = listOf(5, 10, 15, 20)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        goals.forEachIndexed { index, goal ->
+                            SegmentedButton(
+                                selected = goal == dailyGoal,
+                                onClick = { scope.launch { settings.setDailyGoal(goal) } },
+                                shape = SegmentedButtonDefaults.itemShape(index, goals.size),
+                                colors = segmentedColors,
+                            ) { Text("$goal") }
+                        }
                     }
                 }
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                ListItem(
+                    colors = transparentRow,
+                    modifier = Modifier.clickable(onClick = onOpenPlacement),
+                    leadingContent = { Icon(Icons.Filled.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(stringResource(R.string.placement_title)) },
+                    supportingContent = {
+                        Text(
+                            if (hasCompletedPlacement && placementLevel != null) {
+                                stringResource(R.string.placement_current_level, placementLevel!!.code)
+                            } else {
+                                stringResource(R.string.placement_settings_sub)
+                            },
+                        )
+                    },
+                    trailingContent = {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+                    },
+                )
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                ListItem(
+                    colors = transparentRow,
+                    modifier = Modifier.clickable(onClick = onOpenStudy),
+                    leadingContent = { Icon(Icons.Filled.Style, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(stringResource(R.string.study_flashcards)) },
+                    supportingContent = { Text(stringResource(R.string.study_flashcards_sub)) },
+                    trailingContent = {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+                    },
+                )
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                ListItem(
+                    colors = transparentRow,
+                    modifier = Modifier.clickable(onClick = onOpenGrammarGuide),
+                    leadingContent = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(stringResource(R.string.grammar_guide_title)) },
+                    supportingContent = { Text(stringResource(R.string.grammar_guide_sub)) },
+                    trailingContent = {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+                    },
+                )
             }
 
-            Text(stringResource(R.string.settings_learning), style = MaterialTheme.typography.titleSmall)
-            Text(stringResource(R.string.settings_daily_goal), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            val goals = listOf(5, 10, 15, 20)
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                goals.forEachIndexed { index, goal ->
-                    SegmentedButton(
-                        selected = goal == dailyGoal,
-                        onClick = { scope.launch { settings.setDailyGoal(goal) } },
-                        shape = SegmentedButtonDefaults.itemShape(index, goals.size),
-                    ) { Text("$goal") }
-                }
-            }
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column {
-                    ListItem(
-                        modifier = Modifier.clickable(onClick = onOpenPlacement),
-                        headlineContent = { Text(stringResource(R.string.placement_title)) },
-                        supportingContent = {
-                            Text(
-                                if (hasCompletedPlacement && placementLevel != null) {
-                                    stringResource(R.string.placement_current_level, placementLevel!!.code)
-                                } else {
-                                    stringResource(R.string.placement_settings_sub)
-                                },
-                            )
-                        },
-                        trailingContent = {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
-                        },
-                    )
-                    HorizontalDivider(thickness = 0.5.dp)
-                    ListItem(
-                        modifier = Modifier.clickable(onClick = onOpenStudy),
-                        headlineContent = { Text(stringResource(R.string.study_flashcards)) },
-                        supportingContent = { Text(stringResource(R.string.study_flashcards_sub)) },
-                        trailingContent = {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
-                        },
-                    )
-                    HorizontalDivider(thickness = 0.5.dp)
-                    ListItem(
-                        modifier = Modifier.clickable(onClick = onOpenGrammarGuide),
-                        headlineContent = { Text(stringResource(R.string.grammar_guide_title)) },
-                        supportingContent = { Text(stringResource(R.string.grammar_guide_sub)) },
-                        trailingContent = {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
-                        },
-                    )
-                }
+            SectionHeader(title = stringResource(R.string.settings_backup))
+            AppCard {
+                ListItem(
+                    colors = transparentRow,
+                    modifier = Modifier.clickable { exportLauncher.launch("tajik-dictionary-favorites.json") },
+                    leadingContent = { Icon(Icons.Filled.CloudUpload, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(stringResource(R.string.backup_export_title)) },
+                    supportingContent = { Text(stringResource(R.string.backup_export_sub)) },
+                )
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                ListItem(
+                    colors = transparentRow,
+                    modifier = Modifier.clickable {
+                        importLauncher.launch(arrayOf("application/json", "text/*"))
+                    },
+                    leadingContent = { Icon(Icons.Filled.CloudDownload, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(stringResource(R.string.backup_import_title)) },
+                    supportingContent = { Text(stringResource(R.string.backup_import_sub)) },
+                )
             }
 
-            Text(stringResource(R.string.settings_backup), style = MaterialTheme.typography.titleSmall)
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column {
-                    ListItem(
-                        modifier = Modifier.clickable { exportLauncher.launch("tajik-dictionary-favorites.json") },
-                        headlineContent = { Text(stringResource(R.string.backup_export_title)) },
-                        supportingContent = { Text(stringResource(R.string.backup_export_sub)) },
-                    )
-                    HorizontalDivider(thickness = 0.5.dp)
-                    ListItem(
-                        modifier = Modifier.clickable {
-                            importLauncher.launch(arrayOf("application/json", "text/*"))
-                        },
-                        headlineContent = { Text(stringResource(R.string.backup_import_title)) },
-                        supportingContent = { Text(stringResource(R.string.backup_import_sub)) },
-                    )
-                }
-            }
-
-            Text(stringResource(R.string.settings_about), style = MaterialTheme.typography.titleSmall)
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column {
-                    ListItem(
-                        headlineContent = { Text(stringResource(R.string.app_name)) },
-                        supportingContent = { Text("v0.3.0 · Offline Tajik–Russian–English") },
-                    )
-                    HorizontalDivider(thickness = 0.5.dp)
-                    ListItem(
-                        headlineContent = { Text(stringResource(R.string.settings_data_version)) },
-                        supportingContent = { Text(info?.dataVersion?.ifEmpty { "—" } ?: "…") },
-                    )
-                    HorizontalDivider(thickness = 0.5.dp)
-                    ListItem(
-                        headlineContent = { Text(stringResource(R.string.settings_stats)) },
-                        supportingContent = { Text(info?.stats?.ifEmpty { "—" } ?: "…") },
-                    )
-                    HorizontalDivider(thickness = 0.5.dp)
-                    ListItem(
-                        modifier = Modifier.clickable {
-                            val mail = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:support@tajikdictionary.tj"))
-                                .putExtra(Intent.EXTRA_SUBJECT, "Tajik Dictionary feedback")
-                            runCatching { context.startActivity(mail) }
-                        },
-                        headlineContent = { Text(stringResource(R.string.settings_report_mistake)) },
-                        supportingContent = { Text(stringResource(R.string.settings_report_mistake_sub)) },
-                    )
-                }
+            SectionHeader(title = stringResource(R.string.settings_about))
+            AppCard {
+                ListItem(
+                    colors = transparentRow,
+                    leadingContent = { Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(stringResource(R.string.app_name)) },
+                    supportingContent = { Text("v0.3.0 · Offline Tajik–Russian–English") },
+                )
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                ListItem(
+                    colors = transparentRow,
+                    leadingContent = { Icon(Icons.Filled.Update, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    headlineContent = { Text(stringResource(R.string.settings_data_version)) },
+                    supportingContent = { Text(info?.dataVersion?.ifEmpty { "—" } ?: "…") },
+                )
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                ListItem(
+                    colors = transparentRow,
+                    leadingContent = { Icon(Icons.Filled.Storage, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    headlineContent = { Text(stringResource(R.string.settings_stats)) },
+                    supportingContent = { Text(info?.stats?.ifEmpty { "—" } ?: "…") },
+                )
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                ListItem(
+                    colors = transparentRow,
+                    modifier = Modifier.clickable {
+                        val mail = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:support@tajikdictionary.tj"))
+                            .putExtra(Intent.EXTRA_SUBJECT, "Tajik Dictionary feedback")
+                        runCatching { context.startActivity(mail) }
+                    },
+                    leadingContent = { Icon(Icons.Filled.Feedback, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(stringResource(R.string.settings_report_mistake)) },
+                    supportingContent = { Text(stringResource(R.string.settings_report_mistake_sub)) },
+                )
             }
         }
     }

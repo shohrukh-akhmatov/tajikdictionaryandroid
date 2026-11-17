@@ -43,6 +43,7 @@ data class Translation(
     val headword: String,
     val pos: PartOfSpeech?,
     val note: String?,
+    val position: Int = 0,
 )
 
 data class Example(val tg: String, val ru: String?, val en: String?)
@@ -52,6 +53,12 @@ data class EntryDetail(
     /** Translations grouped by language, in sense order. */
     val translations: Map<Language, List<Translation>>,
     val examples: List<Example>,
+    /** Same-language entries sharing the same headword/search_key with a different part of speech (e.g. соҳибӣ n. vs adj.). */
+    val homographs: List<SearchResult> = emptyList(),
+    /** Same-language entries that share translations with this entry. */
+    val synonyms: List<SearchResult> = emptyList(),
+    /** Same-language entries sharing the word root/prefix. */
+    val relatedWords: List<SearchResult> = emptyList(),
 )
 
 data class DictionaryInfo(val dataVersion: String, val stats: String)

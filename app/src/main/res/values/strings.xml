@@ -201,4 +201,13 @@
     <string name="vocab_stage">Stage %1$d/4</string>
     <string name="vocab_meta_interval">Stability: %1$dd</string>
     <string name="vocab_meta_lapses">Stability: %1$dd · Lapses: %2$d</string>
+    <string name="detail_sense_n">Sense %1$d</string>
+    <string name="detail_other_pos">Other meanings &amp; parts of speech</string>
+    <string name="detail_synonyms">Synonyms</string>
+    <string name="detail_related_words">Related words</string>
+    <string name="detail_pronunciation_hint">Pronunciation</string>
+    <string name="detail_listen_translation">Listen to translation</string>
+    <string name="detail_learning_practice_again">Practice Again</string>
+    <string name="saved_count_subtitle">%1$d saved</string>
+    <string name="history_count_subtitle">%1$d recent</string>
 </resources>

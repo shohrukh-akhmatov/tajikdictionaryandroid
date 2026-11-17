@@ -39,6 +39,9 @@ class SearchViewModel(
     val mode: StateFlow<DictionaryMode> = settings.mode
         .stateIn(viewModelScope, SharingStarted.Eagerly, DictionaryMode.TJ_RU)
 
+    val speechRate: StateFlow<Float> = settings.speechRate
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 1.0f)
+
     val recent: StateFlow<List<HistoryEntity>> = userData.history
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

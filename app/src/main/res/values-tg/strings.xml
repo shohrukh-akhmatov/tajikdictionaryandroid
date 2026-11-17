@@ -201,4 +201,13 @@
     <string name="vocab_stage">Марҳила %1$d/4</string>
     <string name="vocab_meta_interval">Устуворӣ: %1$d рӯз</string>
     <string name="vocab_meta_lapses">Устуворӣ: %1$d рӯз · Хатоҳо: %2$d</string>
+    <string name="detail_sense_n">Маънои %1$d</string>
+    <string name="detail_other_pos">Дигар маъноҳо ва ҳиссаҳои нутқ</string>
+    <string name="detail_synonyms">Муродифҳо</string>
+    <string name="detail_related_words">Калимаҳои ҳамреша</string>
+    <string name="detail_pronunciation_hint">Талаффуз</string>
+    <string name="detail_listen_translation">Шунидани тарҷума</string>
+    <string name="detail_learning_practice_again">Боз машқ кардан</string>
+    <string name="saved_count_subtitle">%1$d захирашуда</string>
+    <string name="history_count_subtitle">%1$d ҷустуҷӯи охир</string>
 </resources>

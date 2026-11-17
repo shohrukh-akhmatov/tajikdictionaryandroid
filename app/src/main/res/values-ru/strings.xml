@@ -201,4 +201,13 @@
     <string name="vocab_stage">Этап %1$d/4</string>
     <string name="vocab_meta_interval">Стабильность: %1$d дн.</string>
     <string name="vocab_meta_lapses">Стабильность: %1$d дн. · Ошибок: %2$d</string>
+    <string name="detail_sense_n">Значение %1$d</string>
+    <string name="detail_other_pos">Другие значения и части речи</string>
+    <string name="detail_synonyms">Синонимы</string>
+    <string name="detail_related_words">Родственные слова</string>
+    <string name="detail_pronunciation_hint">Произношение</string>
+    <string name="detail_listen_translation">Озвучить перевод</string>
+    <string name="detail_learning_practice_again">Повторить снова</string>
+    <string name="saved_count_subtitle">Сохранено: %1$d</string>
+    <string name="history_count_subtitle">Просмотров: %1$d</string>
 </resources>

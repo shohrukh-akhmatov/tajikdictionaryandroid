@@ -1,15 +1,30 @@
 package tj.tajikdictionary.ui
 
+import android.net.Uri
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.School
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -33,7 +49,6 @@ import tj.tajikdictionary.ui.detail.EntryDetailScreen
 import tj.tajikdictionary.ui.detail.EntryDetailViewModel
 import tj.tajikdictionary.ui.favorites.FavoritesScreen
 import tj.tajikdictionary.ui.history.HistoryScreen
-import android.net.Uri
 import tj.tajikdictionary.ui.search.SearchScreen
 import tj.tajikdictionary.ui.search.SearchViewModel
 import tj.tajikdictionary.ui.search.TopicEntriesScreen
@@ -46,12 +61,17 @@ import tj.tajikdictionary.ui.study.StudyScreen
 import tj.tajikdictionary.ui.study.VocabularyListScreen
 import tj.tajikdictionary.ui.study.WordGameScreen
 
-private enum class TopTab(val route: String, val labelRes: Int, val icon: ImageVector) {
-    SEARCH("search", R.string.tab_dictionary, Icons.AutoMirrored.Filled.MenuBook),
-    LEARN("learn", R.string.tab_learn, Icons.Filled.School),
-    SAVED("favorites", R.string.tab_saved, Icons.Filled.Star),
-    HISTORY("history", R.string.tab_history, Icons.Filled.History),
-    SETTINGS("settings", R.string.tab_settings, Icons.Filled.Settings),
+private enum class TopTab(
+    val route: String,
+    val labelRes: Int,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector,
+) {
+    SEARCH("search", R.string.tab_dictionary, Icons.AutoMirrored.Filled.MenuBook, Icons.AutoMirrored.Outlined.MenuBook),
+    LEARN("learn", R.string.tab_learn, Icons.Filled.School, Icons.Outlined.School),
+    SAVED("favorites", R.string.tab_saved, Icons.Filled.Star, Icons.Outlined.StarBorder),
+    HISTORY("history", R.string.tab_history, Icons.Filled.History, Icons.Outlined.History),
+    SETTINGS("settings", R.string.tab_settings, Icons.Filled.Settings, Icons.Outlined.Settings),
 }
 
 data class LaunchRequest(
@@ -84,34 +104,60 @@ fun TajikDictionaryRoot(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar {
-                    TopTab.entries.forEach { tab ->
-                        val selected = backStackEntry?.destination?.hierarchy?.any { it.route == tab.route } == true
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = {
-                                navController.navigate(tab.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(tab.icon, contentDescription = null) },
-                            label = { Text(stringResource(tab.labelRes)) },
-                        )
+                Column {
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+                    )
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                        tonalElevation = 0.dp,
+                    ) {
+                        TopTab.entries.forEach { tab ->
+                            val selected = backStackEntry?.destination?.hierarchy?.any { it.route == tab.route } == true
+                            NavigationBarItem(
+                                selected = selected,
+                                onClick = {
+                                    navController.navigate(tab.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
+                                icon = {
+                                    Icon(
+                                        imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                        contentDescription = null,
+                                    )
+                                },
+                                label = { Text(stringResource(tab.labelRes), maxLines = 1) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+                        }
                     }
                 }
             }
         },
     ) { padding ->
         val openEntry: (Long) -> Unit = { id -> navController.navigate("entry/$id") }
+        val openTopic: (String) -> Unit = { topic -> navController.navigate("topic/${Uri.encode(topic)}") }
 
         NavHost(
             navController = navController,
             startDestination = TopTab.SEARCH.route,
             modifier = Modifier.padding(padding),
+            enterTransition = { fadeIn(animationSpec = tween(180)) },
+            exitTransition = { fadeOut(animationSpec = tween(140)) },
         ) {
             composable(TopTab.SEARCH.route) {
                 val vm: SearchViewModel = viewModel(
@@ -130,7 +176,7 @@ fun TajikDictionaryRoot(
                 SearchScreen(
                     viewModel = vm,
                     onEntryClick = openEntry,
-                    onTopicClick = { topic -> navController.navigate("topic/${Uri.encode(topic)}") },
+                    onTopicClick = openTopic,
                 )
             }
             composable(
@@ -276,6 +322,7 @@ fun TajikDictionaryRoot(
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
                     onEntryClick = openEntry,
+                    onTopicClick = openTopic,
                 )
             }
         }
