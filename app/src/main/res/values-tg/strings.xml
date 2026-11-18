@@ -266,4 +266,31 @@
     <string name="grammar_pat_obj_ex">Дарро пӯшед.</string>
     <string name="grammar_pat_pres_title">Замони ҳозира: ме- + асос + бандак</string>
     <string name="grammar_pat_pres_ex">рафтан → меравам</string>
+
+    <!-- Phrase fallback -->
+    <string name="match_words_hint">Ибора ёфт нашуд — калимаҳо алоҳида нишон дода шуданд</string>
+
+    <!-- Share cards -->
+    <string name="share_chooser_title">Бо муваффақиятҳо мубодила кунед</string>
+    <string name="share_failed">Корт сохта нашуд</string>
+    <string name="share_action">Мубодилаи натиҷа</string>
+    <string name="share_button">Мубодила</string>
+    <string name="share_close">Пӯшидан</string>
+    <string name="share_headline_round">Давр анҷом ёфт!</string>
+    <string name="share_headline_level">Сатҳи забони тоҷикии ман: %1$s</string>
+    <string name="share_headline_streak">%1$d рӯз пайдарпай!</string>
+    <string name="share_headline_progress">Пешрафти ман дар забони тоҷикӣ</string>
+    <string name="share_headline_badge">Дастоварди нав</string>
+    <string name="share_subtitle_level">Сатҳи %1$d · %2$s</string>
+    <string name="share_stat_accuracy">Дақиқӣ</string>
+    <string name="share_stat_new_words">Калимаҳои нав</string>
+    <string name="share_stat_streak">Пайдарпай</string>
+    <string name="share_stat_known_words">Калимаҳои маълум</string>
+    <string name="share_stat_recognition">Фаҳмиши матн</string>
+    <string name="share_stat_score">Натиҷа</string>
+    <string name="share_stat_mastered">Азхудкунӣ</string>
+    <string name="share_stat_level">Сатҳ</string>
+    <string name="share_stat_best_streak">Беҳтарин пайдарпайӣ</string>
+    <string name="share_cta">Забони тоҷикиро ройгон омӯзед, ҳатто бе интернет</string>
+    <string name="study_language">Забони омӯзиш</string>
 </resources>

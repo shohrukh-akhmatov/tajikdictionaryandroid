@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import tj.tajikdictionary.ui.share.ShareCardButton
+import tj.tajikdictionary.ui.share.ShareCardsContent
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -62,6 +64,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
@@ -114,7 +118,7 @@ fun WordGameScreen(
     settings: SettingsRepository,
     onBack: () -> Unit,
 ) {
-    val mode by settings.mode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
+    val mode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
     val speechRate by settings.speechRate.collectAsStateWithLifecycle(initialValue = 1.0f)
     val fontScale by settings.fontScale.collectAsStateWithLifecycle(initialValue = FontScaleSetting.MEDIUM)
     val dailyGoal by settings.dailyGoal.collectAsStateWithLifecycle(initialValue = 10)
@@ -130,6 +134,12 @@ fun WordGameScreen(
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    fun hideKeyboard() {
+        focusManager.clearFocus()
+        keyboard?.hide()
+    }
 
     var ttsReady by remember { mutableStateOf(false) }
     val tts = remember(context) {
@@ -270,6 +280,7 @@ fun WordGameScreen(
     }
 
     fun triggerDontKnow() {
+        hideKeyboard()
         val current = queue.firstOrNull() ?: return
         totalAttempts += 1
         comboCount = 0
@@ -356,6 +367,7 @@ fun WordGameScreen(
     }
 
     fun submitText(input: String, item: GameRoundItem) {
+        hideKeyboard() // Check button and the keyboard's Enter both land here
         when (val res = WordGameEngine.checkTypedAnswer(input, item.card.headword)) {
             AnswerCheckResult.Exact -> {
                 nearMissTarget = null
@@ -404,7 +416,7 @@ fun WordGameScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title) },
+                title = { StudyLanguageTitle(title, settings) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.back))
@@ -561,6 +573,17 @@ fun WordGameScreen(
                         onClick = { roundVersion += 1 },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(R.string.game_play_again)) }
+                    Spacer(Modifier.height(8.dp))
+                    ShareCardButton(content = { ctx ->
+                        ShareCardsContent.round(
+                            ctx,
+                            xp = sessionXp,
+                            accuracy = accuracy,
+                            newWords = graduatedCount,
+                            streakDays = summary.currentStreakDays,
+                            cefr = summary.cefrLevel.code,
+                        )
+                    })
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = onBack,

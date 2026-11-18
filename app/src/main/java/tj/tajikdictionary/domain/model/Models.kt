@@ -10,8 +10,11 @@ data class SearchResult(
     val preview: String,
 )
 
-/** TRANSLIT = Latin-script input read as Tajik Cyrillic ("salom" → "салом"). */
-enum class SearchMatchType { DIRECT, STEM, FUZZY, TRANSLIT }
+/**
+ * TRANSLIT = Latin-script input read as Tajik Cyrillic ("salom" → "салом").
+ * WORDS = a multi-word phrase that isn't an entry, shown word by word ("добрый день" → добрый, день).
+ */
+enum class SearchMatchType { DIRECT, STEM, FUZZY, TRANSLIT, WORDS }
 
 /** Result of a search, including whether we suggest switching the mode or used fallback matching. */
 data class SearchOutcome(

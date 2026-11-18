@@ -266,4 +266,31 @@
     <string name="grammar_pat_obj_ex">Дарро пӯшед. (Закройте дверь.)</string>
     <string name="grammar_pat_pres_title">Настоящее время: ме- + основа + окончание</string>
     <string name="grammar_pat_pres_ex">рафтан → меравам (иду / хожу)</string>
+
+    <!-- Phrase fallback -->
+    <string name="match_words_hint">Фраза не найдена — показаны отдельные слова</string>
+
+    <!-- Share cards -->
+    <string name="share_chooser_title">Поделиться успехами</string>
+    <string name="share_failed">Не удалось создать карточку</string>
+    <string name="share_action">Поделиться результатом</string>
+    <string name="share_button">Поделиться</string>
+    <string name="share_close">Закрыть</string>
+    <string name="share_headline_round">Раунд завершён!</string>
+    <string name="share_headline_level">Мой уровень таджикского: %1$s</string>
+    <string name="share_headline_streak">Серия: %1$d дн. подряд!</string>
+    <string name="share_headline_progress">Мой прогресс в таджикском</string>
+    <string name="share_headline_badge">Новое достижение</string>
+    <string name="share_subtitle_level">Уровень %1$d · %2$s</string>
+    <string name="share_stat_accuracy">Точность</string>
+    <string name="share_stat_new_words">Новые слова</string>
+    <string name="share_stat_streak">Серия</string>
+    <string name="share_stat_known_words">Известных слов</string>
+    <string name="share_stat_recognition">Понимание текста</string>
+    <string name="share_stat_score">Результат</string>
+    <string name="share_stat_mastered">Выучено</string>
+    <string name="share_stat_level">Уровень</string>
+    <string name="share_stat_best_streak">Лучшая серия</string>
+    <string name="share_cta">Учите таджикский бесплатно, даже офлайн</string>
+    <string name="study_language">Язык обучения</string>
 </resources>

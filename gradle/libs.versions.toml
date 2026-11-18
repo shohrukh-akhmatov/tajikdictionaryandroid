@@ -10,6 +10,8 @@ composeBom = "2025.10.01"
 room = "2.8.3"
 datastore = "1.1.7"
 junit = "4.13.2"
+sqliteJdbc = "3.53.4.0"
+zxing = "3.5.4"
 androidxJunit = "1.3.0"
 espresso = "3.7.0"
 
@@ -31,6 +33,8 @@ androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = 
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version.ref = "sqliteJdbc" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJunit" }
 
 [plugins]

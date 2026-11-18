@@ -32,6 +32,8 @@ import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
+import tj.tajikdictionary.ui.share.ShareCardIconButton
+import tj.tajikdictionary.ui.share.ShareCardsContent
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Tune
@@ -203,6 +205,8 @@ fun LearnScreen(
                             }
                         }
                     }
+
+                    StudyLanguagePicker(settings)
 
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -413,6 +417,9 @@ fun LearnScreen(
                                 )
                             }
                         }
+
+                        Spacer(Modifier.weight(1f))
+                        ShareCardIconButton(content = { ctx -> ShareCardsContent.progress(ctx, summary, levelTitle) })
 
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
@@ -673,9 +680,17 @@ fun LearnScreen(
                                             modifier = Modifier.size(18.dp),
                                         )
                                     }
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(stringResource(titleText), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                                         Text(stringResource(subText), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    if (badge.unlocked) {
+                                        ShareCardIconButton(
+                                            content = { ctx ->
+                                                ShareCardsContent.badge(ctx, icon, ctx.getString(titleText), ctx.getString(subText), summary)
+                                            },
+                                            modifier = Modifier.size(32.dp),
+                                        )
                                     }
                                 }
                             }

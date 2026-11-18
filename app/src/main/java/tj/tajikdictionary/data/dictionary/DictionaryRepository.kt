@@ -44,18 +44,24 @@ class DictionaryRepository(
             val translitKey = TextNormalizer.searchKey(cyrillic)
             if (translitKey.isNotEmpty() && translitKey.none { it in 'a'..'z' }) {
                 val tajik = searchIn(translitKey, rawQuery, setOf(Language.TAJIK), mode, limit)
-                if (tajik.results.isNotEmpty()) {
-                    if (primary == null || primary.results.isEmpty()) {
-                        return@withContext tajik.copy(
-                            matchType = if (tajik.matchType == SearchMatchType.FUZZY) {
-                                SearchMatchType.FUZZY
-                            } else {
-                                SearchMatchType.TRANSLIT
-                            },
-                            transliteratedQuery = cyrillic,
-                        )
+                val tajikIsStrong = tajik.matchType != SearchMatchType.FUZZY && tajik.matchType != SearchMatchType.WORDS
+                if (tajik.results.isNotEmpty() && (primary == null || primary.results.isEmpty())) {
+                    return@withContext tajik.copy(
+                        matchType = if (tajikIsStrong) SearchMatchType.TRANSLIT else tajik.matchType,
+                        transliteratedQuery = cyrillic,
+                    )
+                }
+                if (tajik.results.isNotEmpty() && primary != null && primary.matchType == SearchMatchType.WORDS) {
+                    // Word-by-word is the weakest fallback: only a direct/stem Tajik reading beats it, and
+                    // the two lists are never mixed ("good morning" must not add Cyrillic "гоод…").
+                    return@withContext if (tajikIsStrong) {
+                        tajik.copy(matchType = SearchMatchType.TRANSLIT, transliteratedQuery = cyrillic)
+                    } else {
+                        primary
                     }
-                    if (tajik.matchType != SearchMatchType.FUZZY) {
+                }
+                if (tajik.results.isNotEmpty() && primary != null) {
+                    if (tajikIsStrong) {
                         // Ambiguous input like "man" (EN man / TJ ман): exact hits of both first.
                         val primaryExact = primary.results.filter { TextNormalizer.searchKey(it.headword) == key }
                         val tajikExact = tajik.results.filter { TextNormalizer.searchKey(it.headword) == translitKey }
@@ -131,8 +137,31 @@ class DictionaryRepository(
                 }
             }
 
+            // Fallback 3: a phrase that isn't an entry ("добрый день", "good morning") → look up each word.
+            val wordResults = wordByWordSearch(key, languages, mode, limit)
+            if (wordResults.isNotEmpty()) {
+                return@run SearchOutcome(rawQuery, wordResults, languages, null, SearchMatchType.WORDS)
+            }
+
             SearchOutcome(rawQuery, emptyList(), languages, suggestedMode = null)
         }
+
+    /**
+     * Looks up each word of a multi-word [key] separately (exact form, then base form, then prefix),
+     * keeping query word order so a phrase reads left to right. Mirrors iOS `wordByWordSearch`.
+     */
+    private fun wordByWordSearch(
+        key: String,
+        languages: Set<Language>,
+        mode: DictionaryMode,
+        limit: Int,
+    ): List<SearchResult> {
+        return wordByWord(
+            key, languages, limit,
+            exact = { keys, n -> exactMatches(keys, languages, mode, n) },
+            prefix = { word, n -> prefixSearch(word, languages, mode, n) },
+        )
+    }
 
     private fun exactMatches(
         keys: List<String>,
@@ -140,27 +169,8 @@ class DictionaryRepository(
         mode: DictionaryMode,
         limit: Int,
     ): List<SearchResult> {
-        val langPlaceholders = languages.joinToString(",") { "?" }
-        val keyPlaceholders = keys.joinToString(",") { "?" }
-        val sql = """
-            SELECT e.id, e.lang, e.headword, e.pos,
-                   (SELECT group_concat(h, ', ') FROM (
-                        SELECT t2.headword AS h
-                        FROM translations t JOIN entries t2 ON t2.id = t.to_id
-                        WHERE t.from_id = e.id
-                          AND t2.lang = CASE WHEN e.lang = 'tg' THEN ? ELSE 'tg' END
-                        ORDER BY t.position LIMIT 4)) AS preview
-            FROM entries e
-            WHERE e.lang IN ($langPlaceholders)
-              AND e.search_key IN ($keyPlaceholders)
-            ORDER BY e.frequency DESC, e.headword ASC
-            LIMIT $limit
-        """.trimIndent()
-        val args = buildList {
-            add(mode.partner.code)
-            languages.forEach { add(it.code) }
-            keys.forEach { add(it) }
-        }.toTypedArray()
+        val sql = exactMatchesSql(keys.size, languages.size, limit)
+        val args = exactMatchesArgs(keys, languages, mode)
 
         return db.get().rawQuery(sql, args).use { c ->
             c.mapRows {
@@ -181,27 +191,8 @@ class DictionaryRepository(
         mode: DictionaryMode,
         limit: Int,
     ): List<SearchResult> {
-        val placeholders = languages.joinToString(",") { "?" }
-        val sql = """
-            SELECT e.id, e.lang, e.headword, e.pos,
-                   (SELECT group_concat(h, ', ') FROM (
-                        SELECT t2.headword AS h
-                        FROM translations t JOIN entries t2 ON t2.id = t.to_id
-                        WHERE t.from_id = e.id
-                          AND t2.lang = CASE WHEN e.lang = 'tg' THEN ? ELSE 'tg' END
-                        ORDER BY t.position LIMIT 4)) AS preview
-            FROM entries e
-            WHERE e.lang IN ($placeholders)
-              AND e.search_key >= ?
-              AND e.search_key < ? || char(65535)
-            ORDER BY (e.search_key = ?) DESC, e.frequency DESC, length(e.headword) ASC, e.headword ASC
-            LIMIT $limit
-        """.trimIndent()
-        val args = buildList {
-            add(mode.partner.code)
-            languages.forEach { add(it.code) }
-            add(key); add(key); add(key)
-        }.toTypedArray()
+        val sql = prefixSearchSql(languages.size, limit)
+        val args = prefixSearchArgs(key, languages, mode)
 
         return db.get().rawQuery(sql, args).use { c ->
             c.mapRows {
@@ -229,12 +220,7 @@ class DictionaryRepository(
         val placeholders = languages.joinToString(",") { "?" }
         val sql = """
             SELECT e.id, e.lang, e.headword, e.pos, e.search_key, e.frequency,
-                   (SELECT group_concat(h, ', ') FROM (
-                        SELECT t2.headword AS h
-                        FROM translations t JOIN entries t2 ON t2.id = t.to_id
-                        WHERE t.from_id = e.id
-                          AND t2.lang = CASE WHEN e.lang = 'tg' THEN ? ELSE 'tg' END
-                        ORDER BY t.position LIMIT 4)) AS preview
+                   ${previewColumn("e", 4)} AS preview
             FROM entries e
             WHERE e.lang IN ($placeholders)
               AND length(e.search_key) BETWEEN ? AND ?
@@ -289,11 +275,7 @@ class DictionaryRepository(
         db.get().rawQuery(
             """
             SELECT e.id, e.lang, e.headword, e.pos,
-                   (SELECT group_concat(h, ', ') FROM (
-                        SELECT t2.headword AS h
-                        FROM translations t JOIN entries t2 ON t2.id = t.to_id
-                        WHERE t.from_id = e.id AND t2.lang = ?
-                        ORDER BY t.position LIMIT 4)) AS preview
+                   ${previewColumn("e", 4, fixedPartner = true)} AS preview
             FROM entries e
             WHERE e.lang = 'tg' AND e.topic = ?
             ORDER BY e.frequency DESC, e.headword ASC
@@ -363,11 +345,7 @@ class DictionaryRepository(
             db.get().rawQuery(
                 """
                 SELECT e2.id, e2.lang, e2.headword, e2.pos,
-                       (SELECT group_concat(h, ', ') FROM (
-                            SELECT t2.headword AS h
-                            FROM translations t JOIN entries t2 ON t2.id = t.to_id
-                            WHERE t.from_id = e2.id AND t2.lang = ?
-                            ORDER BY t.position LIMIT 3)) AS preview
+                       ${previewColumn("e2", 3, fixedPartner = true)} AS preview
                 FROM entries e2
                 WHERE e2.lang = ? AND e2.search_key = ? AND e2.id != ?
                 ORDER BY e2.frequency DESC, e2.id ASC
@@ -390,11 +368,7 @@ class DictionaryRepository(
         val synonyms = db.get().rawQuery(
             """
             SELECT e2.id, e2.lang, e2.headword, e2.pos,
-                   (SELECT group_concat(h, ', ') FROM (
-                        SELECT t3.headword AS h
-                        FROM translations t JOIN entries t3 ON t3.id = t.to_id
-                        WHERE t.from_id = e2.id AND t3.lang = ?
-                        ORDER BY t.position LIMIT 2)) AS preview,
+                   ${previewColumn("e2", 2, fixedPartner = true)} AS preview,
                    COUNT(*) AS shared
             FROM translations t1
             JOIN translations t_rev ON t_rev.from_id = t1.to_id
@@ -427,11 +401,7 @@ class DictionaryRepository(
             db.get().rawQuery(
                 """
                 SELECT e2.id, e2.lang, e2.headword, e2.pos,
-                       (SELECT group_concat(h, ', ') FROM (
-                            SELECT t2.headword AS h
-                            FROM translations t JOIN entries t2 ON t2.id = t.to_id
-                            WHERE t.from_id = e2.id AND t2.lang = ?
-                            ORDER BY t.position LIMIT 2)) AS preview
+                       ${previewColumn("e2", 2, fixedPartner = true)} AS preview
                 FROM entries e2
                 WHERE e2.lang = ?
                   AND e2.search_key >= ?
@@ -483,15 +453,8 @@ class DictionaryRepository(
     /** Short translation preview for an entry (used by Word of the Day, history, favorites). */
     suspend fun preview(id: Long, mode: DictionaryMode): String = withContext(io) {
         db.get().rawQuery(
-            """
-            SELECT group_concat(h, ', ') FROM (
-                SELECT t2.headword AS h FROM translations t
-                JOIN entries e ON e.id = t.from_id
-                JOIN entries t2 ON t2.id = t.to_id
-                WHERE t.from_id = ? AND t2.lang = CASE WHEN e.lang = 'tg' THEN ? ELSE 'tg' END
-                ORDER BY t.position LIMIT 4)
-            """.trimIndent(),
-            arrayOf(id.toString(), mode.partner.code),
+            "SELECT ${previewColumn("e", 4)} FROM entries e WHERE e.id = ?",
+            arrayOf(mode.partner.code, id.toString()),
         ).use { c -> if (c.moveToFirst()) c.stringOrNull(0).orEmpty() else "" }
     }
 
@@ -514,11 +477,7 @@ class DictionaryRepository(
         val freqClause = if (maxFrequency < 100) "AND e.frequency <= ?" else ""
         val sql = """
             SELECT e.id, e.lang, e.headword, e.pos, e.frequency, e.topic,
-                   (SELECT group_concat(h, ', ') FROM (
-                        SELECT t2.headword AS h
-                        FROM translations t JOIN entries t2 ON t2.id = t.to_id
-                        WHERE t.from_id = e.id AND t2.lang = ?
-                        ORDER BY t.position LIMIT 4)) AS preview,
+                   ${previewColumn("e", 4, fixedPartner = true)} AS preview,
                    (SELECT ex.tg FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_tg,
                    (SELECT $partnerCol FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_partner
             FROM entries e
@@ -583,11 +542,7 @@ class DictionaryRepository(
         for ((lo, hi) in ranges) {
             val sql = """
                 SELECT e.id, e.lang, e.headword, e.pos, e.frequency, e.topic,
-                       (SELECT group_concat(h, ', ') FROM (
-                            SELECT t2.headword AS h
-                            FROM translations t JOIN entries t2 ON t2.id = t.to_id
-                            WHERE t.from_id = e.id AND t2.lang = ?
-                            ORDER BY t.position LIMIT 2)) AS preview
+                       ${previewColumn("e", 2, fixedPartner = true)} AS preview
                 FROM entries e
                 WHERE e.lang = 'tg' AND e.frequency BETWEEN ? AND ?
                 ORDER BY RANDOM()
@@ -624,12 +579,7 @@ class DictionaryRepository(
         val placeholders = entryIds.joinToString(",") { "?" }
         val sql = """
             SELECT e.id, e.lang, e.headword, e.pos, e.frequency, e.topic,
-                   (SELECT group_concat(h, ', ') FROM (
-                        SELECT t2.headword AS h
-                        FROM translations t JOIN entries t2 ON t2.id = t.to_id
-                        WHERE t.from_id = e.id
-                          AND t2.lang = CASE WHEN e.lang = 'tg' THEN ? ELSE 'tg' END
-                        ORDER BY t.position LIMIT 4)) AS preview,
+                   ${previewColumn("e", 4)} AS preview,
                    (SELECT ex.tg FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_tg,
                    (SELECT $partnerCol FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_partner
             FROM entries e
@@ -663,6 +613,96 @@ class DictionaryRepository(
             "SELECT headword FROM entries WHERE lang = 'tg' ORDER BY frequency DESC, id ASC LIMIT ?",
             arrayOf(limit.toString()),
         ).use { c -> c.mapRows { getString(0) } }
+    }
+
+    companion object {
+        /**
+         * Word-by-word phrase fallback: each word of a multi-word [key] (up to 8, length >= 2, in query
+         * order) is looked up as an exact search key (3 hits), then by its stems (2), then - for words
+         * of 3+ letters - by prefix (2). Duplicate entries are skipped. Mirrors iOS `wordByWordSearch`.
+         */
+        internal fun wordByWord(
+            key: String,
+            languages: Set<Language>,
+            limit: Int,
+            exact: (keys: List<String>, limit: Int) -> List<SearchResult>,
+            prefix: (word: String, limit: Int) -> List<SearchResult>,
+        ): List<SearchResult> {
+            val words = key.split(' ').filter { it.isNotEmpty() }
+            if (words.size < 2) return emptyList()
+
+            val seen = HashSet<Long>()
+            val combined = ArrayList<SearchResult>()
+            for (word in words.take(8)) {
+                if (word.length < 2) continue
+                var hits = exact(listOf(word), 3)
+                if (hits.isEmpty()) {
+                    val stems = WordStemmer.candidateStems(word, languages)
+                    if (stems.isNotEmpty()) hits = exact(stems, 2)
+                }
+                if (hits.isEmpty() && word.length >= 3) hits = prefix(word, 2)
+                for (hit in hits) if (seen.add(hit.id)) combined += hit
+            }
+            return combined.take(limit)
+        }
+
+        /** Columns: id, lang, headword, pos, preview. Bindings: [exactMatchesArgs]. */
+        internal fun exactMatchesSql(keyCount: Int, langCount: Int, limit: Int): String = """
+            SELECT e.id, e.lang, e.headword, e.pos,
+                   ${previewColumn("e", 4)} AS preview
+            FROM entries e
+            WHERE e.lang IN (${List(langCount) { "?" }.joinToString(",")})
+              AND e.search_key IN (${List(keyCount) { "?" }.joinToString(",")})
+            ORDER BY e.frequency DESC, e.headword ASC
+            LIMIT $limit
+        """.trimIndent()
+
+        internal fun exactMatchesArgs(keys: List<String>, languages: Set<Language>, mode: DictionaryMode): Array<String> =
+            buildList {
+                add(mode.partner.code)
+                languages.forEach { add(it.code) }
+                keys.forEach { add(it) }
+            }.toTypedArray()
+
+        /** Columns: id, lang, headword, pos, preview. Bindings: [prefixSearchArgs]. */
+        internal fun prefixSearchSql(langCount: Int, limit: Int): String = """
+            SELECT e.id, e.lang, e.headword, e.pos,
+                   ${previewColumn("e", 4)} AS preview
+            FROM entries e
+            WHERE e.lang IN (${List(langCount) { "?" }.joinToString(",")})
+              AND e.search_key >= ?
+              AND e.search_key < ? || char(65535)
+            ORDER BY (e.search_key = ?) DESC, e.frequency DESC, length(e.headword) ASC, e.headword ASC
+            LIMIT $limit
+        """.trimIndent()
+
+        internal fun prefixSearchArgs(key: String, languages: Set<Language>, mode: DictionaryMode): Array<String> =
+            buildList {
+                add(mode.partner.code)
+                languages.forEach { add(it.code) }
+                add(key); add(key); add(key)
+            }.toTypedArray()
+
+        /**
+         * Correlated subquery yielding a short `", "`-joined translation preview for the entry aliased [alias].
+         * Consumes exactly one `?` binding: the partner language code.
+         * - By default the preview language is the partner for Tajik entries and Tajik for RU/EN entries;
+         *   [fixedPartner] always uses the bound language.
+         * - Translations with the same spelling (homograph targets like two "ташаккур" entries) are
+         *   collapsed so previews never read "ташаккур, раҳмат, ташаккур". Same SQL as iOS `previewColumn`.
+         */
+        internal fun previewColumn(alias: String, limit: Int, fixedPartner: Boolean = false): String {
+            val langCondition = if (fixedPartner) "?" else "CASE WHEN $alias.lang = 'tg' THEN ? ELSE 'tg' END"
+            return """
+                (SELECT group_concat(h, ', ') FROM (
+                    SELECT pe.headword AS h, MIN(pt.position) AS p, MIN(pt.id) AS first_id
+                    FROM translations pt JOIN entries pe ON pe.id = pt.to_id
+                    WHERE pt.from_id = $alias.id AND pe.lang = $langCondition
+                    GROUP BY pe.headword
+                    ORDER BY p, first_id
+                    LIMIT $limit))
+            """.trimIndent()
+        }
     }
 
     private fun Cursor.toEntry() = Entry(

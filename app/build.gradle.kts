@@ -70,7 +70,11 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.datastore.preferences)
+    // QR code of the app link on share cards.
+    implementation(libs.zxing.core)
 
     testImplementation(libs.junit)
+    // Runs the real search SQL against the bundled dictionary in plain JVM tests.
+    testImplementation(libs.sqlite.jdbc)
     androidTestImplementation(libs.androidx.junit)
 }

@@ -82,7 +82,7 @@ fun StudyScreen(
     initialTopic: String? = null,
     onBack: () -> Unit,
 ) {
-    val mode by settings.mode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
+    val mode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
     val favorites by userData.favorites.collectAsStateWithLifecycle(initialValue = emptyList())
     val progress by userData.flashcards.collectAsStateWithLifecycle(initialValue = emptyList())
     val topics by produceState<List<TopicCount>>(initialValue = emptyList(), dictionary) {

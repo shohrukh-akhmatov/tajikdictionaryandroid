@@ -1,6 +1,8 @@
 package tj.tajikdictionary.data.settings
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
@@ -24,9 +26,12 @@ enum class FontScaleSetting(val scale: Float) {
 private val Context.settingsStore by preferencesDataStore(name = "settings")
 
 /** App preferences backed by Jetpack DataStore. */
-class SettingsRepository(private val context: Context) {
+class SettingsRepository(private val store: DataStore<Preferences>) {
+
+    constructor(context: Context) : this(context.settingsStore)
 
     private val modeKey = stringPreferencesKey("dictionary_mode")
+    private val studyModeKey = stringPreferencesKey("study_mode")
     private val themeKey = stringPreferencesKey("theme")
     private val speechRateKey = floatPreferencesKey("speech_rate")
     private val fontScaleKey = stringPreferencesKey("font_scale")
@@ -36,67 +41,80 @@ class SettingsRepository(private val context: Context) {
     private val placementBaselineWordsKey = intPreferencesKey("placement_baseline_words")
     private val hasCompletedPlacementKey = booleanPreferencesKey("has_completed_placement")
 
-    val mode: Flow<DictionaryMode> = context.settingsStore.data.map { prefs ->
+    val mode: Flow<DictionaryMode> = store.data.map { prefs ->
         prefs[modeKey]?.let { runCatching { DictionaryMode.valueOf(it) }.getOrNull() } ?: DictionaryMode.TJ_RU
     }
 
-    val theme: Flow<ThemeSetting> = context.settingsStore.data.map { prefs ->
+    /**
+     * Language pair used by the learning features (word game, flashcards, placement test). Separate from [mode],
+     * so switching it on the Learn screen never changes Search. Until set, it follows the dictionary mode.
+     * Progress is keyed by the Tajik entry, so it is shared across both learning languages.
+     */
+    val studyMode: Flow<DictionaryMode> = store.data.map { prefs ->
+        resolveStudyMode(prefs[studyModeKey], prefs[modeKey])
+    }
+
+    val theme: Flow<ThemeSetting> = store.data.map { prefs ->
         prefs[themeKey]?.let { runCatching { ThemeSetting.valueOf(it) }.getOrNull() } ?: ThemeSetting.SYSTEM
     }
 
-    val speechRate: Flow<Float> = context.settingsStore.data.map { prefs ->
+    val speechRate: Flow<Float> = store.data.map { prefs ->
         prefs[speechRateKey] ?: 1.0f
     }
 
-    val fontScale: Flow<FontScaleSetting> = context.settingsStore.data.map { prefs ->
+    val fontScale: Flow<FontScaleSetting> = store.data.map { prefs ->
         prefs[fontScaleKey]?.let { runCatching { FontScaleSetting.valueOf(it) }.getOrNull() }
             ?: FontScaleSetting.MEDIUM
     }
 
-    val dailyGoal: Flow<Int> = context.settingsStore.data.map { prefs ->
+    val dailyGoal: Flow<Int> = store.data.map { prefs ->
         val goal = prefs[dailyGoalKey] ?: 10
         if (goal > 0) goal else 10
     }
 
-    val placementLevel: Flow<CefrLevel?> = context.settingsStore.data.map { prefs ->
+    val placementLevel: Flow<CefrLevel?> = store.data.map { prefs ->
         prefs[placementLevelKey]?.let { raw -> runCatching { CefrLevel.valueOf(raw) }.getOrNull() }
     }
 
-    val placementCeilingFreq: Flow<Int> = context.settingsStore.data.map { prefs ->
+    val placementCeilingFreq: Flow<Int> = store.data.map { prefs ->
         val ceiling = prefs[placementCeilingFreqKey] ?: 100
         if (ceiling in 40..100) ceiling else 100
     }
 
-    val placementBaselineWords: Flow<Int> = context.settingsStore.data.map { prefs ->
+    val placementBaselineWords: Flow<Int> = store.data.map { prefs ->
         prefs[placementBaselineWordsKey] ?: 0
     }
 
-    val hasCompletedPlacement: Flow<Boolean> = context.settingsStore.data.map { prefs ->
+    val hasCompletedPlacement: Flow<Boolean> = store.data.map { prefs ->
         prefs[hasCompletedPlacementKey] ?: false
     }
 
     suspend fun setMode(mode: DictionaryMode) {
-        context.settingsStore.edit { it[modeKey] = mode.name }
+        store.edit { it[modeKey] = mode.name }
+    }
+
+    suspend fun setStudyMode(mode: DictionaryMode) {
+        store.edit { it[studyModeKey] = mode.name }
     }
 
     suspend fun setTheme(theme: ThemeSetting) {
-        context.settingsStore.edit { it[themeKey] = theme.name }
+        store.edit { it[themeKey] = theme.name }
     }
 
     suspend fun setSpeechRate(rate: Float) {
-        context.settingsStore.edit { it[speechRateKey] = rate }
+        store.edit { it[speechRateKey] = rate }
     }
 
     suspend fun setFontScale(scale: FontScaleSetting) {
-        context.settingsStore.edit { it[fontScaleKey] = scale.name }
+        store.edit { it[fontScaleKey] = scale.name }
     }
 
     suspend fun setDailyGoal(goal: Int) {
-        context.settingsStore.edit { it[dailyGoalKey] = goal }
+        store.edit { it[dailyGoalKey] = goal }
     }
 
     suspend fun applyPlacement(result: PlacementResult) {
-        context.settingsStore.edit { prefs ->
+        store.edit { prefs ->
             prefs[placementLevelKey] = result.cefrLevel.name
             prefs[placementCeilingFreqKey] = result.cefrLevel.recommendedCeilingFrequency
             prefs[placementBaselineWordsKey] = result.cefrLevel.baselineKnownWords
@@ -107,11 +125,19 @@ class SettingsRepository(private val context: Context) {
     suspend fun applyPlacementBackup(cefrCode: String, ceilingFreq: Int, baselineWords: Int) {
         val level = CefrLevel.entries.firstOrNull { it.code.equals(cefrCode, ignoreCase = true) || it.name.equals(cefrCode, ignoreCase = true) }
             ?: return
-        context.settingsStore.edit { prefs ->
+        store.edit { prefs ->
             prefs[placementLevelKey] = level.name
             prefs[placementCeilingFreqKey] = ceilingFreq
             prefs[placementBaselineWordsKey] = baselineWords
             prefs[hasCompletedPlacementKey] = true
         }
+    }
+
+    internal companion object {
+        fun parseMode(raw: String?): DictionaryMode? = raw?.let { runCatching { DictionaryMode.valueOf(it) }.getOrNull() }
+
+        /** Saved study mode, else the dictionary mode the user already picked, else TJ_RU. */
+        fun resolveStudyMode(studyRaw: String?, dictionaryRaw: String?): DictionaryMode =
+            parseMode(studyRaw) ?: parseMode(dictionaryRaw) ?: DictionaryMode.TJ_RU
     }
 }

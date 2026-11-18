@@ -16,6 +16,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import tj.tajikdictionary.ui.share.ShareCardButton
+import tj.tajikdictionary.ui.share.ShareCardsContent
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -80,7 +82,7 @@ fun PlacementTestScreen(
     settings: SettingsRepository,
     onBack: () -> Unit,
 ) {
-    val mode by settings.mode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
+    val mode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
     val scope = rememberCoroutineScope()
 
     var isLoading by remember { mutableStateOf(true) }
@@ -203,6 +205,9 @@ fun PlacementTestScreen(
                     ) {
                         Text(stringResource(R.string.placement_start_at_level))
                     }
+                    Spacer(Modifier.height(8.dp))
+                    val levelTitle = cefrTitle(res.cefrLevel)
+                    ShareCardButton(content = { ctx -> ShareCardsContent.placement(ctx, res, levelTitle) })
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = { reloadTrigger += 1 },

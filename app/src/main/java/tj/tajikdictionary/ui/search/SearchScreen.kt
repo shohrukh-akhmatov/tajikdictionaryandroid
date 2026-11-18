@@ -309,6 +309,7 @@ fun SearchScreen(
                         if (outcome.matchType != SearchMatchType.DIRECT || translit != null) {
                             item(key = "fallback_banner") {
                                 val bannerText = when {
+                                    outcome.matchType == SearchMatchType.WORDS -> stringResource(R.string.match_words_hint)
                                     translit != null && outcome.matchType == SearchMatchType.FUZZY ->
                                         stringResource(R.string.match_translit_hint, translit) + " · " +
                                             stringResource(R.string.match_fuzzy_hint)

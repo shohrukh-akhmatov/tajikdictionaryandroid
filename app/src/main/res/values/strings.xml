@@ -266,4 +266,31 @@
     <string name="grammar_pat_obj_ex">Дарро пӯшед. (Close the door.)</string>
     <string name="grammar_pat_pres_title">Present tense: ме- + stem + ending</string>
     <string name="grammar_pat_pres_ex">рафтан → меравам (I go / am going)</string>
+
+    <!-- Phrase fallback -->
+    <string name="match_words_hint">Phrase not found — showing each word separately</string>
+
+    <!-- Share cards -->
+    <string name="share_chooser_title">Share your progress</string>
+    <string name="share_failed">Couldn\'t create the share card</string>
+    <string name="share_action">Share result</string>
+    <string name="share_button">Share</string>
+    <string name="share_close">Close</string>
+    <string name="share_headline_round">Round complete!</string>
+    <string name="share_headline_level">My Tajik level: %1$s</string>
+    <string name="share_headline_streak">%1$d-day streak!</string>
+    <string name="share_headline_progress">My Tajik progress</string>
+    <string name="share_headline_badge">Achievement unlocked</string>
+    <string name="share_subtitle_level">Level %1$d · %2$s</string>
+    <string name="share_stat_accuracy">Accuracy</string>
+    <string name="share_stat_new_words">New words</string>
+    <string name="share_stat_streak">Streak</string>
+    <string name="share_stat_known_words">Known words</string>
+    <string name="share_stat_recognition">Text recognized</string>
+    <string name="share_stat_score">Score</string>
+    <string name="share_stat_mastered">Mastered</string>
+    <string name="share_stat_level">Level</string>
+    <string name="share_stat_best_streak">Best streak</string>
+    <string name="share_cta">Learn Tajik for free, even offline</string>
+    <string name="study_language">Learning language</string>
 </resources>
