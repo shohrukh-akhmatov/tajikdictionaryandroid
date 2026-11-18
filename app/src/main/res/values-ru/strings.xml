@@ -293,4 +293,31 @@
     <string name="share_stat_best_streak">Лучшая серия</string>
     <string name="share_cta">Учите таджикский бесплатно, даже офлайн</string>
     <string name="study_language">Язык обучения</string>
+
+    <!-- Onboarding and Learn/Progress split (iOS OnboardingView, LearnProgressView) -->
+    <string name="onboarding_welcome_title">Добро пожаловать в Таджикский словарь</string>
+    <string name="onboarding_feature_search">Поиск по 16 000+ словам, даже без интернета</string>
+    <string name="onboarding_feature_game">Учите слова в короткой ежедневной игре</string>
+    <string name="onboarding_feature_save">Сохраняйте слова и следите за прогрессом</string>
+    <string name="onboarding_get_started">Начать</string>
+    <string name="onboarding_skip">Пропустить</string>
+    <string name="onboarding_language_title">Какой язык вы знаете?</string>
+    <string name="onboarding_language_sub">Он будет использоваться для переводов и игры. Его можно изменить в любой момент.</string>
+    <string name="onboarding_goal_title">Выберите цель на день</string>
+    <string name="onboarding_goal_sub">Несколько слов каждый день лучше, чем много раз в неделю.</string>
+    <string name="onboarding_goal_casual">Легко</string>
+    <string name="onboarding_goal_regular">Обычно</string>
+    <string name="onboarding_goal_serious">Серьёзно</string>
+    <string name="onboarding_goal_intense">Интенсивно</string>
+    <string name="onboarding_goal_words_a_day">%1$d слов в день</string>
+    <string name="onboarding_level_title">Вы уже немного знаете таджикский?</string>
+    <string name="onboarding_level_sub">Минутный тест поможет игре пропускать слова, которые вы уже знаете.</string>
+    <string name="onboarding_level_check">Проверить уровень</string>
+    <string name="onboarding_level_check_sub">Тест на 1 минуту</string>
+    <string name="onboarding_level_beginner">Я начинающий</string>
+    <string name="onboarding_level_beginner_sub">Начать с самых частых слов</string>
+    <string name="placement_prompt_sub">Игра будет пропускать слова, которые вы уже знаете.</string>
+    <string name="progress_link_title">Прогресс и достижения</string>
+    <string name="progress_link_words">слов</string>
+    <string name="progress_title">Прогресс</string>
 </resources>

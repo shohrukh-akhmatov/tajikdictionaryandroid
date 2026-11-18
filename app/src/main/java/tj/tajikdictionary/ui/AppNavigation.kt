@@ -30,6 +30,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import tj.tajikdictionary.ui.onboarding.OnboardingScreen
+import tj.tajikdictionary.ui.study.LearnProgressScreen
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -104,6 +114,31 @@ fun TajikDictionaryRoot(
         }
     }
 
+    // Decided once per launch (iOS `RootView.checkOnboarding`): legacy settings or any saved history,
+    // favorites or flashcard progress mean an existing user, who never sees onboarding.
+    var showOnboarding by rememberSaveable { mutableStateOf(false) }
+    var onboardingChecked by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) {
+        if (onboardingChecked) return@LaunchedEffect
+        val settings = container.settings
+        if (!settings.hasCompletedOnboarding.first()) {
+            val userData = container.userData
+            val hasUsage = userData.history.first().isNotEmpty() ||
+                userData.favorites.first().isNotEmpty() ||
+                userData.flashcards.first().isNotEmpty()
+            if (hasUsage) {
+                settings.setHasCompletedOnboarding(true)
+            } else {
+                // Explicit false: choices made during the flow write legacy keys, which must not end it early.
+                settings.setHasCompletedOnboarding(false)
+                showOnboarding = true
+            }
+        }
+        onboardingChecked = true
+    }
+
+    Box(Modifier.fillMaxSize()) {
     KeyboardDismissRoot { dismissModifier ->
     Scaffold(
         modifier = dismissModifier,
@@ -215,6 +250,16 @@ fun TajikDictionaryRoot(
                         val route = if (topic == null) "study" else "study?topic=${Uri.encode(topic)}"
                         navController.navigate(route)
                     },
+                    onOpenPlacement = { navController.navigate("placement") },
+                    onOpenProgress = { navController.navigate("progress") },
+                )
+            }
+            composable("progress") {
+                LearnProgressScreen(
+                    dictionary = container.dictionary,
+                    userData = container.userData,
+                    settings = container.settings,
+                    onBack = { navController.popBackStack() },
                     onOpenPlacement = { navController.navigate("placement") },
                     onOpenVocabulary = { navController.navigate("vocabulary") },
                 )
@@ -329,6 +374,25 @@ fun TajikDictionaryRoot(
                 )
             }
         }
+    }
+    }
+
+    if (showOnboarding) {
+        OnboardingScreen(
+            settings = container.settings,
+            onFinish = { startPlacement ->
+                scope.launch { container.settings.setHasCompletedOnboarding(true) }
+                showOnboarding = false
+                if (startPlacement) {
+                    navController.navigate(TopTab.LEARN.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                    navController.navigate("placement")
+                }
+            },
+        )
     }
     }
 }

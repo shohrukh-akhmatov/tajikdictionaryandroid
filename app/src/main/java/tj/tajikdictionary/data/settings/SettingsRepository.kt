@@ -40,6 +40,12 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
     private val placementCeilingFreqKey = intPreferencesKey("placement_ceiling_freq")
     private val placementBaselineWordsKey = intPreferencesKey("placement_baseline_words")
     private val hasCompletedPlacementKey = booleanPreferencesKey("has_completed_placement")
+    private val hasCompletedOnboardingKey = booleanPreferencesKey("has_completed_onboarding")
+
+    /** Keys only an existing install can have written; used to skip onboarding for upgraders. */
+    private val legacyUsageMarkers: List<Preferences.Key<*>> = listOf(
+        modeKey, themeKey, speechRateKey, fontScaleKey, dailyGoalKey, hasCompletedPlacementKey,
+    )
 
     val mode: Flow<DictionaryMode> = store.data.map { prefs ->
         prefs[modeKey]?.let { runCatching { DictionaryMode.valueOf(it) }.getOrNull() } ?: DictionaryMode.TJ_RU
@@ -89,6 +95,14 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         prefs[hasCompletedPlacementKey] ?: false
     }
 
+    /**
+     * Whether the first-launch onboarding was finished or skipped. Never set on installs that predate
+     * onboarding, so any setting they already saved counts as "done": existing users never see it.
+     */
+    val hasCompletedOnboarding: Flow<Boolean> = store.data.map { prefs ->
+        prefs[hasCompletedOnboardingKey] ?: legacyUsageMarkers.any { prefs.contains(it) }
+    }
+
     suspend fun setMode(mode: DictionaryMode) {
         store.edit { it[modeKey] = mode.name }
     }
@@ -111,6 +125,10 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
 
     suspend fun setDailyGoal(goal: Int) {
         store.edit { it[dailyGoalKey] = goal }
+    }
+
+    suspend fun setHasCompletedOnboarding(done: Boolean) {
+        store.edit { it[hasCompletedOnboardingKey] = done }
     }
 
     suspend fun applyPlacement(result: PlacementResult) {

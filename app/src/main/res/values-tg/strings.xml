@@ -293,4 +293,31 @@
     <string name="share_stat_best_streak">Беҳтарин пайдарпайӣ</string>
     <string name="share_cta">Забони тоҷикиро ройгон омӯзед, ҳатто бе интернет</string>
     <string name="study_language">Забони омӯзиш</string>
+
+    <!-- Onboarding and Learn/Progress split (iOS OnboardingView, LearnProgressView) -->
+    <string name="onboarding_welcome_title">Хуш омадед ба Луғати тоҷикӣ</string>
+    <string name="onboarding_feature_search">Ҷустуҷӯи зиёда аз 16 000 калима, ҳатто бе интернет</string>
+    <string name="onboarding_feature_game">Калимаҳоро бо бозии кӯтоҳи ҳаррӯза омӯзед</string>
+    <string name="onboarding_feature_save">Калимаҳоро нигоҳ доред ва пешрафти худро пайгирӣ кунед</string>
+    <string name="onboarding_get_started">Оғоз кардан</string>
+    <string name="onboarding_skip">Гузаштан</string>
+    <string name="onboarding_language_title">Шумо кадом забонро медонед?</string>
+    <string name="onboarding_language_sub">Он барои тарҷумаҳо ва бозии омӯзишӣ истифода мешавад. Онро ҳар вақт иваз кардан мумкин аст.</string>
+    <string name="onboarding_goal_title">Ҳадафи рӯзонаро интихоб кунед</string>
+    <string name="onboarding_goal_sub">Ҳар рӯз чанд калима беҳтар аз бисёр калима як бор дар ҳафта аст.</string>
+    <string name="onboarding_goal_casual">Осон</string>
+    <string name="onboarding_goal_regular">Муқаррарӣ</string>
+    <string name="onboarding_goal_serious">Ҷиддӣ</string>
+    <string name="onboarding_goal_intense">Пуршиддат</string>
+    <string name="onboarding_goal_words_a_day">%1$d калима дар як рӯз</string>
+    <string name="onboarding_level_title">Шумо аллакай каме тоҷикӣ медонед?</string>
+    <string name="onboarding_level_sub">Санҷиши 1-дақиқаӣ ба бозӣ имкон медиҳад, ки калимаҳои шиносро гузарад.</string>
+    <string name="onboarding_level_check">Санҷидани сатҳ</string>
+    <string name="onboarding_level_check_sub">Санҷиши 1-дақиқаӣ</string>
+    <string name="onboarding_level_beginner">Ман навомӯз ҳастам</string>
+    <string name="onboarding_level_beginner_sub">Аз калимаҳои серистифода оғоз кунед</string>
+    <string name="placement_prompt_sub">Бозӣ калимаҳои шиносро мегузарад.</string>
+    <string name="progress_link_title">Пешрафт ва дастовардҳо</string>
+    <string name="progress_link_words">калима</string>
+    <string name="progress_title">Пешрафт</string>
 </resources>

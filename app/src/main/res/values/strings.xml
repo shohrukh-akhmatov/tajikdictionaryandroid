@@ -293,4 +293,31 @@
     <string name="share_stat_best_streak">Best streak</string>
     <string name="share_cta">Learn Tajik for free, even offline</string>
     <string name="study_language">Learning language</string>
+
+    <!-- Onboarding and Learn/Progress split (iOS OnboardingView, LearnProgressView) -->
+    <string name="onboarding_welcome_title">Welcome to Tajik Dictionary</string>
+    <string name="onboarding_feature_search">Search 16,000+ words, even offline</string>
+    <string name="onboarding_feature_game">Learn words with a short daily game</string>
+    <string name="onboarding_feature_save">Save words and track your progress</string>
+    <string name="onboarding_get_started">Get started</string>
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_language_title">Which language do you know?</string>
+    <string name="onboarding_language_sub">Translations and the learning game will use it. You can change it anytime.</string>
+    <string name="onboarding_goal_title">Set a daily goal</string>
+    <string name="onboarding_goal_sub">A few words every day works better than many once a week.</string>
+    <string name="onboarding_goal_casual">Casual</string>
+    <string name="onboarding_goal_regular">Regular</string>
+    <string name="onboarding_goal_serious">Serious</string>
+    <string name="onboarding_goal_intense">Intense</string>
+    <string name="onboarding_goal_words_a_day">%1$d words a day</string>
+    <string name="onboarding_level_title">Do you already know some Tajik?</string>
+    <string name="onboarding_level_sub">A 1-minute test lets the game skip words you already know.</string>
+    <string name="onboarding_level_check">Check my level</string>
+    <string name="onboarding_level_check_sub">1-minute test</string>
+    <string name="onboarding_level_beginner">I\'m a beginner</string>
+    <string name="onboarding_level_beginner_sub">Start with the most common words</string>
+    <string name="placement_prompt_sub">The game will skip words you already know.</string>
+    <string name="progress_link_title">Progress &amp; achievements</string>
+    <string name="progress_link_words">words</string>
+    <string name="progress_title">Progress</string>
 </resources>
