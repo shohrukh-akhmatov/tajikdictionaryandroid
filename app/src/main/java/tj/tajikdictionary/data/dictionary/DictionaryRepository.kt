@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import tj.tajikdictionary.core.text.LanguageDetector
+import tj.tajikdictionary.core.text.TajikTransliterator
 import tj.tajikdictionary.core.text.TextNormalizer
 import tj.tajikdictionary.core.text.WordStemmer
 import tj.tajikdictionary.domain.model.DictionaryInfo
@@ -36,15 +37,59 @@ class DictionaryRepository(
 
             val candidates = LanguageDetector.candidates(rawQuery)
             val languages = candidates intersect mode.languages
-            if (languages.isEmpty()) {
+            val primary = if (languages.isNotEmpty()) searchIn(key, rawQuery, languages, mode, limit) else null
+
+            // Latin-script Tajik ("salom", "kitob", "rahmat"): learners often lack a Tajik keyboard.
+            val cyrillic = if (TajikTransliterator.looksLatin(rawQuery)) TajikTransliterator.fromLatin(rawQuery) else ""
+            val translitKey = TextNormalizer.searchKey(cyrillic)
+            if (translitKey.isNotEmpty() && translitKey.none { it in 'a'..'z' }) {
+                val tajik = searchIn(translitKey, rawQuery, setOf(Language.TAJIK), mode, limit)
+                if (tajik.results.isNotEmpty()) {
+                    if (primary == null || primary.results.isEmpty()) {
+                        return@withContext tajik.copy(
+                            matchType = if (tajik.matchType == SearchMatchType.FUZZY) {
+                                SearchMatchType.FUZZY
+                            } else {
+                                SearchMatchType.TRANSLIT
+                            },
+                            transliteratedQuery = cyrillic,
+                        )
+                    }
+                    if (tajik.matchType != SearchMatchType.FUZZY) {
+                        // Ambiguous input like "man" (EN man / TJ ман): exact hits of both first.
+                        val primaryExact = primary.results.filter { TextNormalizer.searchKey(it.headword) == key }
+                        val tajikExact = tajik.results.filter { TextNormalizer.searchKey(it.headword) == translitKey }
+                        val merged = (primaryExact + tajikExact + primary.results + tajik.results)
+                            .distinctBy { it.id }
+                            .take(limit)
+                        return@withContext primary.copy(
+                            results = merged,
+                            searchedLanguages = primary.searchedLanguages + Language.TAJIK,
+                            transliteratedQuery = cyrillic,
+                        )
+                    }
+                }
+            }
+
+            if (primary == null) {
                 val suggestion = DictionaryMode.entries.firstOrNull { (candidates intersect it.languages).isNotEmpty() }
                 return@withContext SearchOutcome(rawQuery, emptyList(), emptySet(), suggestion)
             }
+            primary
+        }
 
+    /** Direct prefix → stem → typo fallback pipeline for one normalized [key] within [languages]. */
+    private fun searchIn(
+        key: String,
+        rawQuery: String,
+        languages: Set<Language>,
+        mode: DictionaryMode,
+        limit: Int,
+    ): SearchOutcome = run {
             val direct = prefixSearch(key, languages, mode, limit)
             val hasExactDirect = direct.any { TextNormalizer.searchKey(it.headword) == key }
             if (direct.isNotEmpty() && hasExactDirect) {
-                return@withContext SearchOutcome(rawQuery, direct, languages, null, SearchMatchType.DIRECT)
+                return@run SearchOutcome(rawQuery, direct, languages, null, SearchMatchType.DIRECT)
             }
 
             // Phase 1 fallback 1: Tajik / Russian / English morphological stem hints (exact lemma match)
@@ -56,7 +101,7 @@ class DictionaryRepository(
                 if (stemResults.isNotEmpty()) {
                     val stemIds = stemResults.map { it.id }.toHashSet()
                     val combined = (stemResults + direct.filter { it.id !in stemIds }).take(limit)
-                    return@withContext SearchOutcome(
+                    return@run SearchOutcome(
                         rawQuery, combined, languages, null, SearchMatchType.STEM,
                     )
                 }
@@ -72,17 +117,17 @@ class DictionaryRepository(
                     if (closeFuzzy.isNotEmpty()) {
                         val fuzzyIds = closeFuzzy.map { it.id }.toHashSet()
                         val combined = (closeFuzzy + direct.filter { it.id !in fuzzyIds }).take(limit)
-                        return@withContext SearchOutcome(rawQuery, combined, languages, null, SearchMatchType.FUZZY)
+                        return@run SearchOutcome(rawQuery, combined, languages, null, SearchMatchType.FUZZY)
                     }
                 }
-                return@withContext SearchOutcome(rawQuery, direct, languages, null, SearchMatchType.DIRECT)
+                return@run SearchOutcome(rawQuery, direct, languages, null, SearchMatchType.DIRECT)
             }
 
             // Phase 1 fallback 2: bounded edit-distance typo tolerance
             if (key.length >= 3) {
                 val fuzzy = fuzzySearch(key, languages, mode, limit = 20)
                 if (fuzzy.isNotEmpty()) {
-                    return@withContext SearchOutcome(rawQuery, fuzzy, languages, null, SearchMatchType.FUZZY)
+                    return@run SearchOutcome(rawQuery, fuzzy, languages, null, SearchMatchType.FUZZY)
                 }
             }
 

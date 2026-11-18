@@ -46,6 +46,7 @@
     <string name="topics_title">Topics</string>
     <string name="match_stem_hint">Showing base forms for “%1$s”</string>
     <string name="match_fuzzy_hint">Showing closest spelling matches</string>
+    <string name="match_translit_hint">Latin letters read as Tajik: “%1$s”</string>
     <string name="study_action">Study</string>
     <string name="study_flashcards">Flashcards</string>
     <string name="study_flashcards_sub">Review saved words or topic decks offline</string>
