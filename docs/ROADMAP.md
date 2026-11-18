@@ -30,7 +30,7 @@
 - [ ] Offline Camera OCR Lookup (ML Kit on Android / VisionKit on iOS)
 
 ## Phase 3.5 — Family Profiles & Sharing (see [`FAMILY_PROFILES_ROADMAP.md`](FAMILY_PROFILES_ROADMAP.md))
-- [x] Share cards for round results, placement level, streaks and achievements (iOS; Android in progress) with app link + QR
+- [x] Share cards for round results, placement level, streaks and achievements (iOS + Android) with app link + QR
 - [ ] Local multi-learner profiles on one device (one learning store per profile, no server), "Who's learning?" switcher
 - [ ] Kid mode + optional parent PIN, local family board, cross-platform profile backup file
 - [ ] Daily reminder (local notifications), onboarding, CI for both repos, GitHub Pages landing + privacy policy

@@ -103,7 +103,7 @@ That costs about 1 read and 1 write per session per profile, which stays within 
 
 ## 3. Share cards (results & achievements, single player too)
 
-**Status:** `[x]` iOS (`Features/Share/ShareCard.swift`) · `[~]` Android (in progress)
+**Status:** `[x]` iOS (`Features/Share/ShareCard.swift`) · `[x]` Android (`ui/share/ShareCards.kt`)
 
 | Where | Card |
 |---|---|
@@ -123,7 +123,7 @@ That costs about 1 read and 1 write per session per profile, which stays within 
 * Privacy: cards never contain the profile name **unless** the user turns on "Show name on share cards" (per profile, off by default for child profiles). There is no analytics and no tracking parameter in the link.
 
 **Next for share cards**
-- [ ] Android parity (same layout, `FileProvider` + `ACTION_SEND`)
+- [x] Android parity (same layout, `FileProvider` + `ACTION_SEND`)
 - [ ] Profile-aware cards (avatar + optional name) after F1
 - [ ] Weekly recap card (Sunday): words mastered, minutes, best day
 - [ ] Switch the link to App Store / Play / RuStore badges on the landing page once the apps are published; consider Universal Links / App Links so the QR opens the app if it is installed
@@ -154,11 +154,11 @@ Entries are matched by `(lang, headword)` first and by `entryId` second, the sam
 
 | Feature | iOS | Android |
 |---|---|---|
-| Keyboard closes on tap/scroll | [x] | [~] |
-| Phrase word-by-word fallback | [x] | [~] |
-| Deduped translation previews | [x] | [~] |
-| Share cards | [x] | [~] |
-| Learning language switch (Tajik ⇄ Russian / English) on Learn card + in-game menu, separate from dictionary mode | [x] | [~] |
+| Keyboard closes on tap/scroll | [x] | [x] |
+| Phrase word-by-word fallback | [x] | [x] |
+| Deduped translation previews | [x] | [x] |
+| Share cards | [x] | [x] |
+| Learning language switch (Tajik ⇄ Russian / English) on Learn card + in-game menu, separate from dictionary mode | [x] | [x] |
 | Profiles F1–F4 | [ ] | [ ] |
 
 ## 6. What else the app needs (prioritized)
