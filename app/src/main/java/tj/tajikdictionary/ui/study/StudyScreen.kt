@@ -1,8 +1,29 @@
 package tj.tajikdictionary.ui.study
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import kotlin.math.abs
+import kotlin.math.min
+import kotlin.math.sign
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -229,17 +250,101 @@ fun StudyScreen(
                     )
                     Spacer(Modifier.height(16.dp))
 
+                    // Same path as the buttons: progress, XP and the daily log all update.
+                    // Works on every card, including the last one (it then shows "Session complete").
+                    val grade: (ReviewRating) -> Unit = { rating ->
+                        val elapsedMs = max(500L, System.currentTimeMillis() - cardPresentedAtMs)
+                        scope.launch {
+                            userData.reviewFlashcard(
+                                card.entryId,
+                                card.language,
+                                card.headword,
+                                card.preview,
+                                rating,
+                                elapsedMs,
+                            )
+                        }
+                        reviewedCount += 1
+                        currentIndex += 1
+                        flipped = false
+                        cardPresentedAtMs = System.currentTimeMillis()
+                    }
+
+                    val density = LocalDensity.current
+                    val thresholdPx = with(density) { SwipeThreshold.toPx() }
+                    val flingPx = with(density) { SwipeFlingVelocity.toPx() }
+                    // Keyed by entryId so the next card always starts centred.
+                    val dragOffset = remember(card.entryId) { Animatable(0f) }
+                    var flyingOut by remember(card.entryId) { mutableStateOf(false) }
+                    val swipe: (Boolean) -> Unit = { right ->
+                        if (!flyingOut) {
+                            flyingOut = true
+                            scope.launch {
+                                val target = with(density) { 700.dp.toPx() }
+                                dragOffset.animateTo(
+                                    if (right) target else -target,
+                                    tween(durationMillis = 200, easing = FastOutLinearInEasing),
+                                )
+                                grade(if (right) ReviewRating.GOOD else ReviewRating.AGAIN)
+                            }
+                        }
+                    }
+                    val goodLabel = stringResource(R.string.study_good)
+                    val againLabel = stringResource(R.string.study_again)
+
                     AppCard(
                         cornerRadius = 20.dp,
-                        onClick = { flipped = !flipped },
+                        onClick = { if (!flyingOut) flipped = !flipped },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
+                            .weight(1f)
+                            .graphicsLayer {
+                                translationX = dragOffset.value
+                                rotationZ = dragOffset.value / density.density / 25f
+                                transformOrigin = TransformOrigin(0.5f, 1f)
+                            }
+                            .pointerInput(card.entryId) {
+                                val tracker = VelocityTracker()
+                                detectHorizontalDragGestures(
+                                    onDragStart = { tracker.resetTracking() },
+                                    onDragCancel = {
+                                        if (!flyingOut) scope.launch { dragOffset.animateTo(0f, spring(dampingRatio = 0.7f)) }
+                                    },
+                                    onDragEnd = {
+                                        if (!flyingOut) {
+                                            val x = dragOffset.value
+                                            val vx = tracker.calculateVelocity().x
+                                            when {
+                                                abs(x) > thresholdPx -> swipe(x > 0)
+                                                abs(vx) > flingPx && sign(vx) == sign(x) -> swipe(vx > 0)
+                                                else -> scope.launch {
+                                                    dragOffset.animateTo(0f, spring(dampingRatio = 0.7f))
+                                                }
+                                            }
+                                        }
+                                    },
+                                ) { change, dx ->
+                                    if (!flyingOut) {
+                                        change.consume()
+                                        val next = dragOffset.value + dx
+                                        // Track our own accumulated offset: the layer moves under the finger.
+                                        tracker.addPosition(change.uptimeMillis, Offset(next, 0f))
+                                        scope.launch { dragOffset.snapTo(next) }
+                                    }
+                                }
+                            }
+                            .semantics {
+                                customActions = listOf(
+                                    CustomAccessibilityAction(goodLabel) { grade(ReviewRating.GOOD); true },
+                                    CustomAccessibilityAction(againLabel) { grade(ReviewRating.AGAIN); true },
+                                )
+                            },
                     ) {
                         Box(
                             modifier = Modifier.fillMaxSize().padding(24.dp),
                             contentAlignment = Alignment.Center,
                         ) {
+                            SwipeStamp(offsetPx = dragOffset.value, thresholdPx = thresholdPx)
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -280,48 +385,40 @@ fun StudyScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.study_swipe_hint),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(12.dp))
 
                     if (!flipped) {
                         Button(
-                            onClick = { flipped = true },
+                            onClick = { if (!flyingOut) flipped = true },
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text(stringResource(R.string.study_reveal)) }
                     } else {
-                        val grade: (ReviewRating) -> Unit = { rating ->
-                            val elapsedMs = max(500L, System.currentTimeMillis() - cardPresentedAtMs)
-                            scope.launch {
-                                userData.reviewFlashcard(
-                                    card.entryId,
-                                    card.language,
-                                    card.headword,
-                                    card.preview,
-                                    rating,
-                                    elapsedMs,
-                                )
-                            }
-                            reviewedCount += 1
-                            currentIndex += 1
-                            flipped = false
-                            cardPresentedAtMs = System.currentTimeMillis()
-                        }
+                        val gradeIfIdle: (ReviewRating) -> Unit = { if (!flyingOut) grade(it) }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             OutlinedButton(
-                                onClick = { grade(ReviewRating.AGAIN) },
+                                onClick = { gradeIfIdle(ReviewRating.AGAIN) },
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     contentColor = MaterialTheme.colorScheme.error,
                                 ),
                             ) { Text(stringResource(R.string.study_again)) }
                             FilledTonalButton(
-                                onClick = { grade(ReviewRating.GOOD) },
+                                onClick = { gradeIfIdle(ReviewRating.GOOD) },
                                 modifier = Modifier.weight(1f),
                             ) { Text(stringResource(R.string.study_good)) }
                             Button(
-                                onClick = { grade(ReviewRating.EASY) },
+                                onClick = { gradeIfIdle(ReviewRating.EASY) },
                                 modifier = Modifier.weight(1f),
                             ) { Text(stringResource(R.string.study_easy)) }
                         }
@@ -330,4 +427,34 @@ fun StudyScreen(
             }
         }
     }
+}
+
+/** Horizontal distance after which releasing the card counts as a swipe (iOS: 110 pt). */
+private val SwipeThreshold = 110.dp
+
+/** A fast fling in the drag's direction also counts as a swipe. */
+private val SwipeFlingVelocity = 800.dp
+
+/** "Good" / "Again" stamp that fades in while the card is dragged (iOS `swipeHint`). */
+@Composable
+private fun BoxScope.SwipeStamp(offsetPx: Float, thresholdPx: Float) {
+    if (offsetPx == 0f) return
+    val right = offsetPx > 0
+    val color = if (right) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+    val label = stringResource(if (right) R.string.study_good else R.string.study_again)
+    Text(
+        text = label.uppercase(),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Black,
+        color = color,
+        modifier = Modifier
+            .align(if (right) Alignment.TopStart else Alignment.TopEnd)
+            .graphicsLayer {
+                alpha = min(1f, abs(offsetPx) / thresholdPx)
+                rotationZ = if (right) -12f else 12f
+            }
+            .border(3.dp, color, RoundedCornerShape(10.dp))
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .clearAndSetSemantics { },
+    )
 }

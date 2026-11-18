@@ -54,6 +54,7 @@
     <string name="study_empty_title">Nothing to study yet</string>
     <string name="study_empty_message">Save a few words with the star icon or pick a topic above.</string>
     <string name="study_tap_to_reveal">Tap card to reveal translation</string>
+    <string name="study_swipe_hint">Swipe right if you know it, left to repeat</string>
     <string name="study_reveal">Show Answer</string>
     <string name="study_again">Again</string>
     <string name="study_good">Good</string>

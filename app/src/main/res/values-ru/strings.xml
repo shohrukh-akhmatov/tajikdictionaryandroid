@@ -54,6 +54,7 @@
     <string name="study_empty_title">Пока нечего учить</string>
     <string name="study_empty_message">Сохраните слова звёздочкой или выберите тему выше.</string>
     <string name="study_tap_to_reveal">Нажмите на карточку, чтобы увидеть перевод</string>
+    <string name="study_swipe_hint">Свайп вправо — знаю, влево — повторить</string>
     <string name="study_reveal">Показать ответ</string>
     <string name="study_again">Снова</string>
     <string name="study_good">Хорошо</string>

@@ -54,6 +54,7 @@
     <string name="study_empty_title">Ҳоло чизе барои омӯзиш нест</string>
     <string name="study_empty_message">Калимаҳоро бо ситорача захира кунед ё мавзӯъ интихоб намоед.</string>
     <string name="study_tap_to_reveal">Барои дидани тарҷума пахш кунед</string>
+    <string name="study_swipe_hint">Ба рост кашед — медонам, ба чап — такрор</string>
     <string name="study_reveal">Нишон додани ҷавоб</string>
     <string name="study_again">Боз</string>
     <string name="study_good">Хуб</string>
