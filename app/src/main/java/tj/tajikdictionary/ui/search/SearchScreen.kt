@@ -43,6 +43,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import tj.tajikdictionary.ui.components.insertAtCaret
+import tj.tajikdictionary.ui.components.keyboardDismissExempt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,6 +102,11 @@ fun SearchScreen(
     val speechRate by viewModel.speechRate.collectAsStateWithLifecycle()
     val keyboard = LocalSoftwareKeyboardController.current
     val speaker = rememberTtsSpeaker()
+    var fieldValue by remember { mutableStateOf(TextFieldValue(query, TextRange(query.length))) }
+    if (fieldValue.text != query) {
+        // Query changed from outside (share / "process text" intent): put the caret at the end.
+        fieldValue = TextFieldValue(query, TextRange(query.length))
+    }
 
     Column(
         modifier = modifier
@@ -105,6 +117,7 @@ fun SearchScreen(
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerLowest,
             shadowElevation = 0.5.dp,
+            modifier = Modifier.keyboardDismissExempt(),
         ) {
             Column(
                 modifier = Modifier
@@ -119,13 +132,20 @@ fun SearchScreen(
                     DictionaryMode.TJ_EN -> stringResource(R.string.search_hint_tj_en)
                 }
                 CompactSearchBar(
-                    query = query,
+                    value = fieldValue,
                     placeholder = placeholder,
-                    onQueryChange = viewModel::onQueryChange,
+                    onValueChange = { v ->
+                        fieldValue = v
+                        if (v.text != query) viewModel.onQueryChange(v.text)
+                    },
                     onSearchAction = { keyboard?.hide() },
                 )
 
-                TajikLettersRow(onLetter = viewModel::appendLetter)
+                TajikLettersRow(onLetter = { ch ->
+                    // Insert at the caret (not just append) and keep the caret after the new letter.
+                    fieldValue = fieldValue.insertAtCaret(ch)
+                    viewModel.onQueryChange(fieldValue.text)
+                })
             }
         }
         HorizontalDivider(
@@ -285,12 +305,17 @@ fun SearchScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        if (outcome.matchType != SearchMatchType.DIRECT) {
+                        val translit = outcome.transliteratedQuery
+                        if (outcome.matchType != SearchMatchType.DIRECT || translit != null) {
                             item(key = "fallback_banner") {
-                                val bannerText = when (outcome.matchType) {
-                                    SearchMatchType.STEM -> stringResource(R.string.match_stem_hint, query.trim())
-                                    SearchMatchType.FUZZY -> stringResource(R.string.match_fuzzy_hint)
-                                    SearchMatchType.DIRECT -> ""
+                                val bannerText = when {
+                                    translit != null && outcome.matchType == SearchMatchType.FUZZY ->
+                                        stringResource(R.string.match_translit_hint, translit) + " · " +
+                                            stringResource(R.string.match_fuzzy_hint)
+                                    translit != null -> stringResource(R.string.match_translit_hint, translit)
+                                    outcome.matchType == SearchMatchType.STEM -> stringResource(R.string.match_stem_hint, query.trim())
+                                    outcome.matchType == SearchMatchType.FUZZY -> stringResource(R.string.match_fuzzy_hint)
+                                    else -> ""
                                 }
                                 Surface(
                                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
@@ -336,11 +361,12 @@ fun SearchScreen(
 
 @Composable
 private fun CompactSearchBar(
-    query: String,
+    value: TextFieldValue,
     placeholder: String,
-    onQueryChange: (String) -> Unit,
+    onValueChange: (TextFieldValue) -> Unit,
     onSearchAction: () -> Unit,
 ) {
+    val query = value.text
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -383,8 +409,8 @@ private fun CompactSearchBar(
                     )
                 }
                 BasicTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
+                    value = value,
+                    onValueChange = onValueChange,
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = MaterialTheme.colorScheme.onSurface,
@@ -397,7 +423,7 @@ private fun CompactSearchBar(
             }
             if (query.isNotEmpty()) {
                 IconButton(
-                    onClick = { onQueryChange("") },
+                    onClick = { onValueChange(TextFieldValue("")) },
                     modifier = Modifier.size(28.dp),
                 ) {
                     Icon(

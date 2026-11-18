@@ -46,6 +46,7 @@
     <string name="topics_title">Мавзӯъҳо</string>
     <string name="match_stem_hint">Шаклҳои асосӣ барои «%1$s»</string>
     <string name="match_fuzzy_hint">Калимаҳои наздик ба имло нишон дода шуданд</string>
+    <string name="match_translit_hint">Ҳарфҳои лотинӣ ҳамчун «%1$s» хонда шуданд</string>
     <string name="study_action">Омӯзиш</string>
     <string name="study_flashcards">Кортҳо</string>
     <string name="study_flashcards_sub">Калимаҳои захирашуда ва мавзӯъҳоро такрор кунед</string>

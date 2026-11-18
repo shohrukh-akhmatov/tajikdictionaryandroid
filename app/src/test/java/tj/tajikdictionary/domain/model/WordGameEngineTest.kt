@@ -77,6 +77,22 @@ class WordGameEngineTest {
             WordGameEngine.checkTypedAnswer("хурдан", "хӯрдан"),
         )
         assertEquals(AnswerCheckResult.Wrong, WordGameEngine.checkTypedAnswer("китоб", "хӯрдан"))
+        // Latin input and single typos on longer words are near misses, not failures.
+        assertEquals(
+            AnswerCheckResult.TajikLetterNearMiss("салом"),
+            WordGameEngine.checkTypedAnswer("salom", "салом"),
+        )
+        assertEquals(
+            AnswerCheckResult.TajikLetterNearMiss("хӯрдан"),
+            WordGameEngine.checkTypedAnswer("хӯрдн", "хӯрдан"),
+        )
+        assertEquals(
+            AnswerCheckResult.TajikLetterNearMiss("китоб"),
+            WordGameEngine.checkTypedAnswer("китоп", "китоб"),
+        )
+        // Two edits, or a typo on a short word, still count as wrong.
+        assertEquals(AnswerCheckResult.Wrong, WordGameEngine.checkTypedAnswer("кит", "китоб"))
+        assertEquals(AnswerCheckResult.Wrong, WordGameEngine.checkTypedAnswer("дор", "дар"))
     }
 
     @Test

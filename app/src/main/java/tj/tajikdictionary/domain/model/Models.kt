@@ -10,7 +10,8 @@ data class SearchResult(
     val preview: String,
 )
 
-enum class SearchMatchType { DIRECT, STEM, FUZZY }
+/** TRANSLIT = Latin-script input read as Tajik Cyrillic ("salom" → "салом"). */
+enum class SearchMatchType { DIRECT, STEM, FUZZY, TRANSLIT }
 
 /** Result of a search, including whether we suggest switching the mode or used fallback matching. */
 data class SearchOutcome(
@@ -20,6 +21,8 @@ data class SearchOutcome(
     /** Non-null when the query looks like a language that is not part of the current mode. */
     val suggestedMode: DictionaryMode?,
     val matchType: SearchMatchType = SearchMatchType.DIRECT,
+    /** Cyrillic reading of a Latin-script query when Tajik results were added through it. */
+    val transliteratedQuery: String? = null,
 ) {
     companion object {
         val Empty = SearchOutcome("", emptyList(), emptySet(), null)

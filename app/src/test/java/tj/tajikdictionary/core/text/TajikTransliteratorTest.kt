@@ -15,4 +15,16 @@ class TajikTransliteratorTest {
         assertEquals("mekunam", TajikTransliterator.toLatin("мекунам"))
         assertEquals("yek", TajikTransliterator.toLatin("ек"))
     }
+
+    @Test
+    fun readsLatinTajikAsCyrillic() {
+        assertEquals("салом", TajikTransliterator.fromLatin("Salom"))
+        assertEquals("хона", TajikTransliterator.fromLatin("khona"))
+        assertEquals("шаҳр", TajikTransliterator.fromLatin("shahr"))
+        assertEquals("ҷавоб", TajikTransliterator.fromLatin("javob"))
+        assertEquals("хӯрдан", TajikTransliterator.fromLatin("khūrdan"))
+        assertEquals("маъно", TajikTransliterator.fromLatin("ma’no"))
+        assertEquals("муваффақият", TajikTransliterator.fromLatin("muvaffaqiyat"))
+        assertEquals("эълон", TajikTransliterator.fromLatin("e'lon"))
+    }
 }

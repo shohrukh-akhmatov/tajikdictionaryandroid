@@ -64,7 +64,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -87,6 +89,8 @@ import tj.tajikdictionary.domain.model.WordCardCandidate
 import tj.tajikdictionary.domain.model.WordGameEngine
 import tj.tajikdictionary.ui.components.EmptyState
 import tj.tajikdictionary.ui.components.TajikLettersRow
+import tj.tajikdictionary.ui.components.insertAtCaret
+import tj.tajikdictionary.ui.components.keyboardDismissExempt
 import tj.tajikdictionary.ui.components.localizedLabel
 import tj.tajikdictionary.ui.components.localizedTopicName
 import java.util.Locale
@@ -146,7 +150,7 @@ fun WordGameScreen(
     var roundVersion by remember { mutableIntStateOf(0) }
 
     var cardPresentedAtMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var typedAnswer by remember { mutableStateOf("") }
+    var typedField by remember { mutableStateOf(TextFieldValue("")) }
     var selectedTileIndices by remember { mutableStateOf<List<Int>>(emptyList()) }
     var selectedChoice by remember { mutableStateOf<String?>(null) }
     var usedHint by remember { mutableStateOf(false) }
@@ -161,7 +165,7 @@ fun WordGameScreen(
     var newlyLearnedInRound by remember { mutableIntStateOf(0) }
 
     fun resetCardInputs() {
-        typedAnswer = ""
+        typedField = TextFieldValue("")
         selectedTileIndices = emptyList()
         selectedChoice = null
         usedHint = false
@@ -856,18 +860,18 @@ fun WordGameScreen(
 
                             ChallengeKind.TYPING -> {
                                 OutlinedTextField(
-                                    value = typedAnswer,
-                                    onValueChange = { typedAnswer = it },
-                                    modifier = Modifier.fillMaxWidth(),
+                                    value = typedField,
+                                    onValueChange = { typedField = it },
+                                    modifier = Modifier.fillMaxWidth().keyboardDismissExempt(),
                                     placeholder = { Text(stringResource(R.string.game_type_hint)) },
                                     singleLine = true,
                                     shape = RoundedCornerShape(14.dp),
                                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                                    keyboardActions = KeyboardActions(onDone = { submitText(typedAnswer, item) }),
+                                    keyboardActions = KeyboardActions(onDone = { submitText(typedField.text, item) }),
                                 )
 
                                 if (item.card.language == Language.TAJIK) {
-                                    TajikLettersRow(onLetter = { typedAnswer += it })
+                                    TajikLettersRow(onLetter = { ch -> typedField = typedField.insertAtCaret(ch) })
                                 }
 
                                 nearMissTarget?.let { target ->
@@ -902,8 +906,8 @@ fun WordGameScreen(
                                         onClick = {
                                             usedHint = true
                                             val prefix = item.card.headword.take(2)
-                                            if (!typedAnswer.lowercase().startsWith(prefix.lowercase())) {
-                                                typedAnswer = prefix
+                                            if (!typedField.text.lowercase().startsWith(prefix.lowercase())) {
+                                                typedField = TextFieldValue(prefix, TextRange(prefix.length))
                                             }
                                         },
                                     ) {
@@ -912,8 +916,8 @@ fun WordGameScreen(
                                         Text(stringResource(R.string.game_hint))
                                     }
                                     Button(
-                                        onClick = { submitText(typedAnswer, item) },
-                                        enabled = typedAnswer.isNotBlank(),
+                                        onClick = { submitText(typedField.text, item) },
+                                        enabled = typedField.text.isNotBlank(),
                                         modifier = Modifier.weight(1f),
                                     ) { Text(stringResource(R.string.game_check)) }
                                 }

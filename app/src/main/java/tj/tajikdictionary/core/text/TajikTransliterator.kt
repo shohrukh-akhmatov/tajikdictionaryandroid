@@ -63,4 +63,44 @@ object TajikTransliterator {
         }
         return sb.toString()
     }
+
+    private val latinDigraphs = mapOf(
+        "sh" to "ш", "ch" to "ч", "kh" to "х", "gh" to "ғ", "zh" to "ж",
+        "yo" to "ё", "yu" to "ю", "ya" to "я", "ye" to "е",
+    )
+    private val latinSingles = mapOf(
+        'a' to "а", 'b' to "б", 'v' to "в", 'w' to "в", 'g' to "г", 'd' to "д", 'e' to "е",
+        'z' to "з", 'i' to "и", 'ī' to "ӣ", 'y' to "й", 'k' to "к", 'q' to "қ", 'l' to "л",
+        'm' to "м", 'n' to "н", 'o' to "о", 'p' to "п", 'r' to "р", 's' to "с", 't' to "т",
+        'u' to "у", 'ū' to "ӯ", 'f' to "ф", 'x' to "х", 'h' to "ҳ", 'j' to "ҷ", 'c' to "ч",
+        'ǧ' to "ғ", 'ğ' to "ғ", 'š' to "ш", 'č' to "ч", 'ž' to "ж", 'ç' to "ч",
+        '\'' to "ъ", '’' to "ъ", 'ʼ' to "ъ",
+    )
+
+    /**
+     * Reads Latin-script Tajik ("salom", "khona", "shahr", "dūst") as Cyrillic so learners without a
+     * Tajik keyboard can still search. Inverse of [toLatin], plus common informal spellings
+     * (x = х, h = ҳ, j = ҷ, q = қ). A word-initial "e" becomes "э" (эй, эълон).
+     */
+    fun fromLatin(text: String): String {
+        val lower = text.trim().lowercase()
+        val sb = StringBuilder(lower.length)
+        var i = 0
+        while (i < lower.length) {
+            val ch = lower[i]
+            val atWordStart = i == 0 || !lower[i - 1].isLetter()
+            val digraph = if (i + 1 < lower.length) latinDigraphs[lower.substring(i, i + 2)] else null
+            if (digraph != null) {
+                sb.append(digraph)
+                i += 2
+            } else {
+                sb.append(if (ch == 'e' && atWordStart) "э" else latinSingles[ch] ?: ch.toString())
+                i += 1
+            }
+        }
+        return sb.toString()
+    }
+
+    /** True when [text] contains Latin letters that [fromLatin] can read as Tajik. */
+    fun looksLatin(text: String): Boolean = text.any { it in 'a'..'z' || it in 'A'..'Z' }
 }

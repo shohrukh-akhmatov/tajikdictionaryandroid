@@ -206,7 +206,10 @@ fun ModeSwitcher(
 @Composable
 fun TajikLettersRow(onLetter: (Char) -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        modifier = modifier
+            .keyboardDismissExempt()
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         TAJIK_LETTERS.forEach { letter ->

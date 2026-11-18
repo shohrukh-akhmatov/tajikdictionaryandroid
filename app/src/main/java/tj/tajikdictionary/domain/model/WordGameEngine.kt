@@ -1,5 +1,6 @@
 package tj.tajikdictionary.domain.model
 
+import tj.tajikdictionary.core.text.TajikTransliterator
 import tj.tajikdictionary.core.text.TextNormalizer
 import java.time.Instant
 import java.time.LocalDate
@@ -459,7 +460,37 @@ object WordGameEngine {
         if (normInput.isNotEmpty() && normInput == normTarget) {
             return AnswerCheckResult.TajikLetterNearMiss(trimmedTarget)
         }
+        // Learners without a Tajik keyboard may type Latin ("salom" for "салом").
+        if (TajikTransliterator.looksLatin(trimmedInput)) {
+            val translitKey = TextNormalizer.searchKey(TajikTransliterator.fromLatin(trimmedInput))
+            if (translitKey.isNotEmpty() && translitKey == normTarget) {
+                return AnswerCheckResult.TajikLetterNearMiss(trimmedTarget)
+            }
+        }
+        // One slip of the finger on a longer word: show the correct spelling instead of failing.
+        if (normTarget.length >= 5 && withinOneEdit(normInput, normTarget)) {
+            return AnswerCheckResult.TajikLetterNearMiss(trimmedTarget)
+        }
         return AnswerCheckResult.Wrong
+    }
+
+    /** True when [a] and [b] differ by at most one insertion, deletion or substitution. */
+    internal fun withinOneEdit(a: String, b: String): Boolean {
+        if (abs(a.length - b.length) > 1) return false
+        val (s, l) = if (a.length <= b.length) a to b else b to a
+        var i = 0
+        var j = 0
+        var edits = 0
+        while (i < s.length && j < l.length) {
+            if (s[i] == l[j]) {
+                i++; j++
+                continue
+            }
+            if (++edits > 1) return false
+            if (s.length == l.length) i++
+            j++
+        }
+        return edits + (l.length - j) + (s.length - i) <= 1
     }
 
     fun evaluateAnswer(

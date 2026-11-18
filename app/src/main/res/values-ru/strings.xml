@@ -46,6 +46,7 @@
     <string name="topics_title">Темы</string>
     <string name="match_stem_hint">Показаны начальные формы для «%1$s»</string>
     <string name="match_fuzzy_hint">Показаны похожие по написанию слова</string>
+    <string name="match_translit_hint">Латиница прочитана как таджикское «%1$s»</string>
     <string name="study_action">Учить</string>
     <string name="study_flashcards">Карточки</string>
     <string name="study_flashcards_sub">Повторяйте сохранённые слова и темы офлайн</string>

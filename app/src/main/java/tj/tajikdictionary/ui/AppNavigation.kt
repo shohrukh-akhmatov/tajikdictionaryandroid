@@ -45,6 +45,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import tj.tajikdictionary.AppContainer
 import tj.tajikdictionary.R
+import tj.tajikdictionary.ui.components.KeyboardDismissRoot
 import tj.tajikdictionary.ui.detail.EntryDetailScreen
 import tj.tajikdictionary.ui.detail.EntryDetailViewModel
 import tj.tajikdictionary.ui.favorites.FavoritesScreen
@@ -103,7 +104,9 @@ fun TajikDictionaryRoot(
         }
     }
 
+    KeyboardDismissRoot { dismissModifier ->
     Scaffold(
+        modifier = dismissModifier,
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
@@ -326,5 +329,6 @@ fun TajikDictionaryRoot(
                 )
             }
         }
+    }
     }
 }

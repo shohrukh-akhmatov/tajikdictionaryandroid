@@ -58,6 +58,7 @@ import tj.tajikdictionary.data.user.FlashcardEntity
 import tj.tajikdictionary.data.user.UserDataRepository
 import tj.tajikdictionary.domain.model.Language
 import tj.tajikdictionary.ui.components.EmptyState
+import tj.tajikdictionary.ui.components.keyboardDismissExempt
 import kotlin.math.roundToInt
 
 enum class VocabFilter {
@@ -161,7 +162,8 @@ fun VocabularyListScreen(
                 onValueChange = { search = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .keyboardDismissExempt(),
                 placeholder = { Text(stringResource(R.string.vocab_search_hint)) },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 trailingIcon = {
