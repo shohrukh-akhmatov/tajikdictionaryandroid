@@ -35,6 +35,7 @@ import tj.tajikdictionary.domain.model.DictionaryMode
 import tj.tajikdictionary.domain.model.SearchResult
 import tj.tajikdictionary.ui.components.AppCard
 import tj.tajikdictionary.ui.components.WordRow
+import tj.tajikdictionary.ui.components.localizedTopicName
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,7 +59,7 @@ fun TopicEntriesScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                 ),
-                title = { Text(topic.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Bold) },
+                title = { Text(localizedTopicName(topic), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(

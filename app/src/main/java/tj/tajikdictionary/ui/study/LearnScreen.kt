@@ -78,6 +78,8 @@ import tj.tajikdictionary.domain.model.TopicCount
 import tj.tajikdictionary.domain.model.WordGameEngine
 import tj.tajikdictionary.ui.components.AppCard
 import tj.tajikdictionary.ui.components.SectionHeader
+import tj.tajikdictionary.ui.components.localizedStudyDuration
+import tj.tajikdictionary.ui.components.localizedTopicName
 import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
@@ -247,7 +249,7 @@ fun LearnScreen(
                             val topicSource = GameDeckSource.Topic(item.topic)
                             TrainerDeckChip(
                                 selected = selectedSource == topicSource,
-                                label = item.topic.replaceFirstChar { it.uppercase() },
+                                label = localizedTopicName(item.topic),
                                 onClick = { selectedSource = topicSource },
                             )
                         }
@@ -414,7 +416,7 @@ fun LearnScreen(
 
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
-                                "Lv. ${summary.level} · $levelTitle",
+                                stringResource(R.string.game_level_badge, summary.level, levelTitle),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary,
                             )
@@ -490,7 +492,7 @@ fun LearnScreen(
                             modifier = Modifier.weight(1f),
                         )
                         AnalyticsTile(
-                            value = WordGameEngine.formatStudyDuration(summary.totalStudySeconds),
+                            value = localizedStudyDuration(summary.totalStudySeconds),
                             label = stringResource(R.string.analytics_time_studied),
                             icon = Icons.Filled.Schedule,
                             color = Color(0xFF7B1FA2),

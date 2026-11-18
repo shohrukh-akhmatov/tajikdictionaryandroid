@@ -35,6 +35,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.ui.draw.clip
 import tj.tajikdictionary.core.text.TajikTransliterator
 import tj.tajikdictionary.ui.components.AppCard
+import tj.tajikdictionary.ui.components.localizedTopicName
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -126,7 +127,7 @@ fun StudyScreen(
                 ),
                 title = {
                     Text(
-                        selectedTopic?.let { stringResource(R.string.study_topic_title, it) }
+                        selectedTopic?.let { stringResource(R.string.study_topic_title, localizedTopicName(it)) }
                             ?: stringResource(R.string.study_flashcards),
                     )
                 },
@@ -159,10 +160,11 @@ fun StudyScreen(
                     )
                 }
                 items(topics, key = { it.topic }) { topic ->
+                    val name = localizedTopicName(topic.topic)
                     AssistChip(
                         onClick = { selectedTopic = topic.topic },
                         label = {
-                            Text(if (selectedTopic == topic.topic) "✓ ${topic.topic}" else topic.topic)
+                            Text(if (selectedTopic == topic.topic) "✓ $name" else name)
                         },
                     )
                 }

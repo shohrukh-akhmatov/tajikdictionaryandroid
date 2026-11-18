@@ -77,6 +77,8 @@ import tj.tajikdictionary.ui.components.LanguageTag
 import tj.tajikdictionary.ui.components.PosBadge
 import tj.tajikdictionary.ui.components.SectionHeader
 import tj.tajikdictionary.ui.components.TtsSpeaker
+import tj.tajikdictionary.ui.components.localizedLabel
+import tj.tajikdictionary.ui.components.localizedTopicName
 import tj.tajikdictionary.ui.components.rememberTtsSpeaker
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -220,7 +222,7 @@ private fun DetailContent(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         LanguageTag(detail.entry.language)
-                        detail.entry.pos?.let { PosBadge(it.label) }
+                        detail.entry.pos?.let { PosBadge(it.localizedLabel()) }
                         detail.entry.topic?.let { topic ->
                             Surface(
                                 onClick = { onTopicClick(topic) },
@@ -228,7 +230,7 @@ private fun DetailContent(
                                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
                             ) {
                                 Text(
-                                    text = topic.replaceFirstChar { it.uppercase() },
+                                    text = localizedTopicName(topic),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     fontWeight = FontWeight.SemiBold,
@@ -684,7 +686,7 @@ private fun HomographRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        item.pos?.let { PosBadge(it.label) }
+        item.pos?.let { PosBadge(it.localizedLabel()) }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = item.headword,
@@ -739,7 +741,7 @@ private fun TranslationSenseRow(
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                translation.pos?.let { PosBadge(it.label) }
+                translation.pos?.let { PosBadge(it.localizedLabel()) }
             }
             if (translation.language == Language.TAJIK) {
                 val latin = TajikTransliterator.toLatin(translation.headword)
@@ -839,7 +841,7 @@ private fun RelatedChip(
             )
             item.pos?.let {
                 Text(
-                    text = it.label,
+                    text = it.localizedLabel(),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

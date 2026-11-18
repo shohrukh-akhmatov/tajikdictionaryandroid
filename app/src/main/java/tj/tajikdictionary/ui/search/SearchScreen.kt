@@ -68,6 +68,8 @@ import tj.tajikdictionary.ui.components.PosBadge
 import tj.tajikdictionary.ui.components.SectionHeader
 import tj.tajikdictionary.ui.components.TajikLettersRow
 import tj.tajikdictionary.ui.components.WordRow
+import tj.tajikdictionary.ui.components.localizedLabel
+import tj.tajikdictionary.ui.components.localizedTopicName
 import tj.tajikdictionary.ui.components.rememberTtsSpeaker
 
 private enum class SearchViewState {
@@ -428,7 +430,7 @@ private fun TopicPill(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = topic.replaceFirstChar { it.uppercase() },
+                text = localizedTopicName(topic),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -519,7 +521,7 @@ private fun WordOfTheDayCard(
                             style = MaterialTheme.typography.headlineMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
-                        item.entry.pos?.let { PosBadge(it.label) }
+                        item.entry.pos?.let { PosBadge(it.localizedLabel()) }
                     }
                     if (item.entry.language == Language.TAJIK) {
                         val latin = TajikTransliterator.toLatin(item.entry.headword)

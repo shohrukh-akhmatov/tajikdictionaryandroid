@@ -53,7 +53,7 @@ fun WordRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                pos?.let { PosBadge(it.label) }
+                pos?.let { PosBadge(it.localizedLabel()) }
             }
             if (preview.isNotEmpty()) {
                 Text(

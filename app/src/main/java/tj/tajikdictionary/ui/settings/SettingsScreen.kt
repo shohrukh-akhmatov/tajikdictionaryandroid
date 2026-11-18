@@ -368,7 +368,7 @@ fun SettingsScreen(
                     colors = transparentRow,
                     leadingContent = { Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                     headlineContent = { Text(stringResource(R.string.app_name)) },
-                    supportingContent = { Text("v0.3.0 · Offline Tajik–Russian–English") },
+                    supportingContent = { Text(stringResource(R.string.settings_app_subtitle)) },
                 )
                 HorizontalDivider(
                     thickness = 0.5.dp,

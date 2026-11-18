@@ -60,6 +60,7 @@ import tj.tajikdictionary.domain.model.PlacementQuestion
 import tj.tajikdictionary.domain.model.PlacementResult
 import tj.tajikdictionary.domain.model.WordGameEngine
 import tj.tajikdictionary.ui.components.LanguageTag
+import tj.tajikdictionary.ui.components.localizedLabel
 import java.util.Locale
 
 @Composable
@@ -264,7 +265,7 @@ fun PlacementTestScreen(
                                 LanguageTag(q.candidate.language)
                                 q.candidate.pos?.let { pos ->
                                     Text(
-                                        pos.code,
+                                        pos.localizedLabel(),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )

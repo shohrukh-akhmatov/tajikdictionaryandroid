@@ -87,6 +87,8 @@ import tj.tajikdictionary.domain.model.WordCardCandidate
 import tj.tajikdictionary.domain.model.WordGameEngine
 import tj.tajikdictionary.ui.components.EmptyState
 import tj.tajikdictionary.ui.components.TajikLettersRow
+import tj.tajikdictionary.ui.components.localizedLabel
+import tj.tajikdictionary.ui.components.localizedTopicName
 import java.util.Locale
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -392,7 +394,7 @@ fun WordGameScreen(
         GameDeckSource.DueReviews -> stringResource(R.string.game_due_reviews_title)
         GameDeckSource.WeakWords -> stringResource(R.string.game_weak_words)
         GameDeckSource.Saved -> stringResource(R.string.tab_saved)
-        is GameDeckSource.Topic -> source.topic.replaceFirstChar { it.uppercase() }
+        is GameDeckSource.Topic -> localizedTopicName(source.topic)
     }
 
     Scaffold(
@@ -660,7 +662,7 @@ fun WordGameScreen(
                                         Text(badgeText, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = badgeFg)
                                     }
                                     item.card.pos?.let {
-                                        Text(it.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(it.localizedLabel(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
 

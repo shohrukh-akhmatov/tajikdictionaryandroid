@@ -4,36 +4,45 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import tj.tajikdictionary.R
+import tj.tajikdictionary.ui.components.AppCard
+import tj.tajikdictionary.ui.components.SectionHeader
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GrammarGuideScreen(onBack: () -> Unit) {
+    val transparentRow = ListItemDefaults.colors(containerColor = Color.Transparent)
+
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.grammar_guide_title)) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+                title = { Text(stringResource(R.string.grammar_guide_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -53,37 +62,59 @@ fun GrammarGuideScreen(onBack: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(stringResource(R.string.grammar_letters_title), style = MaterialTheme.typography.titleMedium)
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column {
-                    val letters = listOf(
-                        Triple("Ғ ғ", "gh / г", "voiced uvular fricative (like French r): ғамгин"),
-                        Triple("Ӣ ӣ", "ī / и", "stressed long i at word ends: бинӣ, зиндагӣ"),
-                        Triple("Қ қ", "q / к", "deep uvular k from back of throat: қалам, вақт"),
-                        Triple("Ӯ ӯ", "ū / у", "rounded mid vowel: хӯрдан, кӯҳ, дӯст"),
-                        Triple("Ҳ ҳ", "h / х", "soft breathy h (not guttural х): ҳафта, шаҳр"),
-                        Triple("Ҷ ҷ", "j / ч", "English j in 'jam': ҷавоб, куҷо"),
+            SectionHeader(title = stringResource(R.string.grammar_letters_title))
+            AppCard {
+                val letters = listOf(
+                    Triple("Ғ ғ", "gh / г", stringResource(R.string.grammar_letter_gh_desc)),
+                    Triple("Ӣ ӣ", "ī / и", stringResource(R.string.grammar_letter_i_desc)),
+                    Triple("Қ қ", "q / к", stringResource(R.string.grammar_letter_q_desc)),
+                    Triple("Ӯ ӯ", "ū / у", stringResource(R.string.grammar_letter_u_desc)),
+                    Triple("Ҳ ҳ", "h / х", stringResource(R.string.grammar_letter_h_desc)),
+                    Triple("Ҷ ҷ", "j / ч", stringResource(R.string.grammar_letter_j_desc)),
+                )
+                letters.forEachIndexed { idx, (ch, fold, desc) ->
+                    ListItem(
+                        colors = transparentRow,
+                        leadingContent = {
+                            Text(
+                                ch,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                        headlineContent = { Text(fold, fontWeight = FontWeight.SemiBold) },
+                        supportingContent = { Text(desc) },
                     )
-                    letters.forEachIndexed { idx, (ch, fold, desc) ->
-                        ListItem(
-                            leadingContent = {
-                                Text(ch, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            },
-                            headlineContent = { Text(fold, fontWeight = FontWeight.SemiBold) },
-                            supportingContent = { Text(desc) },
+                    if (idx < letters.lastIndex) {
+                        HorizontalDivider(
+                            thickness = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                            modifier = Modifier.padding(horizontal = 16.dp),
                         )
-                        if (idx < letters.lastIndex) HorizontalDivider(thickness = 0.5.dp)
                     }
                 }
             }
 
-            Text(stringResource(R.string.grammar_patterns_title), style = MaterialTheme.typography.titleMedium)
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PatternRow("Plural: -ҳо / -он", "китоб → китобҳо (books), дӯст → дӯстон (friends)")
-                    PatternRow("Ezafe: -и", "хонаи калон (big house), китоби ман (my book)")
-                    PatternRow("Object marker: -ро", "Дарро пӯшед. (Close the door.)")
-                    PatternRow("Present tense: ме- + stem + ending", "рафтан → меравам (I go / am going)")
+            SectionHeader(title = stringResource(R.string.grammar_patterns_title))
+            AppCard {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PatternRow(
+                        stringResource(R.string.grammar_pat_plural_title),
+                        stringResource(R.string.grammar_pat_plural_ex),
+                    )
+                    PatternRow(
+                        stringResource(R.string.grammar_pat_ezafe_title),
+                        stringResource(R.string.grammar_pat_ezafe_ex),
+                    )
+                    PatternRow(
+                        stringResource(R.string.grammar_pat_obj_title),
+                        stringResource(R.string.grammar_pat_obj_ex),
+                    )
+                    PatternRow(
+                        stringResource(R.string.grammar_pat_pres_title),
+                        stringResource(R.string.grammar_pat_pres_ex),
+                    )
                 }
             }
         }
