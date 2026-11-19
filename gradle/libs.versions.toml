@@ -14,6 +14,9 @@ sqliteJdbc = "3.53.4.0"
 zxing = "3.5.4"
 androidxJunit = "1.3.0"
 espresso = "3.7.0"
+yandexMobileAds = "8.7.0"
+ump = "4.0.0"
+googleMobileAds = "1.3.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -36,6 +39,9 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version.ref = "sqliteJdbc" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJunit" }
+yandex-mobileads = { group = "com.yandex.android", name = "mobileads", version.ref = "yandexMobileAds" }
+google-mobile-ads = { group = "com.google.android.libraries.ads.mobile.sdk", name = "ads-mobile-sdk", version.ref = "googleMobileAds" }
+google-ump = { group = "com.google.android.ump", name = "user-messaging-platform", version.ref = "ump" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

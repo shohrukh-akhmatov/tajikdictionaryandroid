@@ -12,9 +12,9 @@ class StudyModeSettingsTest {
     private val settings = SettingsRepository(InMemoryPreferences())
 
     @Test
-    fun studyModeDefaultsToDictionaryMode() = runBlocking {
-        assertEquals(DictionaryMode.TJ_RU, settings.studyMode.first())
-        settings.setMode(DictionaryMode.TJ_EN)
+    fun studyModeDefaultsToEnglish() = runBlocking {
+        assertEquals(DictionaryMode.TJ_EN, settings.studyMode.first())
+        settings.setMode(DictionaryMode.TJ_RU)
         assertEquals(DictionaryMode.TJ_EN, settings.studyMode.first())
     }
 
@@ -33,8 +33,8 @@ class StudyModeSettingsTest {
 
     @Test
     fun resolveStudyModeFallbacks() {
-        assertEquals(DictionaryMode.TJ_EN, SettingsRepository.resolveStudyMode(null, "TJ_EN"))
+        assertEquals(DictionaryMode.TJ_EN, SettingsRepository.resolveStudyMode(null, "TJ_RU"))
         assertEquals(DictionaryMode.TJ_RU, SettingsRepository.resolveStudyMode("TJ_RU", "TJ_EN"))
-        assertEquals(DictionaryMode.TJ_RU, SettingsRepository.resolveStudyMode("bogus", null))
+        assertEquals(DictionaryMode.TJ_EN, SettingsRepository.resolveStudyMode("bogus", null))
     }
 }

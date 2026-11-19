@@ -321,4 +321,8 @@
     <string name="progress_link_title">Прогресс и достижения</string>
     <string name="progress_link_words">слов</string>
     <string name="progress_title">Прогресс</string>
+
+    <!-- Ads and GDPR consent (iOS StickyBannerView, Settings privacy row) -->
+    <string name="ad_label">Реклама</string>
+    <string name="settings_privacy">Настройки конфиденциальности</string>
 </resources>

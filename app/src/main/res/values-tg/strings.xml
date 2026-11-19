@@ -321,4 +321,8 @@
     <string name="progress_link_title">Пешрафт ва дастовардҳо</string>
     <string name="progress_link_words">калима</string>
     <string name="progress_title">Пешрафт</string>
+
+    <!-- Ads and GDPR consent (iOS StickyBannerView, Settings privacy row) -->
+    <string name="ad_label">Реклама</string>
+    <string name="settings_privacy">Танзимоти махфият</string>
 </resources>

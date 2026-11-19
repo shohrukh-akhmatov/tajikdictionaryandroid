@@ -55,6 +55,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import tj.tajikdictionary.R
+import androidx.activity.compose.LocalActivity
+import androidx.compose.material.icons.filled.PrivacyTip
+import tj.tajikdictionary.ads.AdsManager
 import tj.tajikdictionary.data.dictionary.DictionaryRepository
 import tj.tajikdictionary.data.settings.FontScaleSetting
 import tj.tajikdictionary.data.settings.SettingsRepository
@@ -408,6 +411,22 @@ fun SettingsScreen(
                     headlineContent = { Text(stringResource(R.string.settings_report_mistake)) },
                     supportingContent = { Text(stringResource(R.string.settings_report_mistake_sub)) },
                 )
+                // GDPR: lets users in regions that need it change their ad consent (UMP privacy options).
+                val privacyRequired by AdsManager.isPrivacyOptionsRequired.collectAsStateWithLifecycle()
+                val activity = LocalActivity.current
+                if (privacyRequired && activity != null) {
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                    ListItem(
+                        colors = transparentRow,
+                        modifier = Modifier.clickable { AdsManager.presentPrivacyOptions(activity) },
+                        leadingContent = { Icon(Icons.Filled.PrivacyTip, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                        headlineContent = { Text(stringResource(R.string.settings_privacy)) },
+                    )
+                }
             }
         }
     }

@@ -10,3 +10,7 @@ captures/
 *.keystore
 *.jks
 keystore.properties
+
+# Play Developer API service-account keys
+*service-account*.json
+__pycache__/

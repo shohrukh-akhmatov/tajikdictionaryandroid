@@ -53,7 +53,7 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
 
     /**
      * Language pair used by the learning features (word game, flashcards, placement test). Separate from [mode],
-     * so switching it on the Learn screen never changes Search. Until set, it follows the dictionary mode.
+     * so switching it on the Learn screen never changes Search. Until set, it defaults to English.
      * Progress is keyed by the Tajik entry, so it is shared across both learning languages.
      */
     val studyMode: Flow<DictionaryMode> = store.data.map { prefs ->
@@ -156,6 +156,6 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
 
         /** Saved study mode, else the dictionary mode the user already picked, else TJ_RU. */
         fun resolveStudyMode(studyRaw: String?, dictionaryRaw: String?): DictionaryMode =
-            parseMode(studyRaw) ?: parseMode(dictionaryRaw) ?: DictionaryMode.TJ_RU
+            parseMode(studyRaw) ?: DictionaryMode.TJ_EN
     }
 }

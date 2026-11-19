@@ -78,6 +78,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import tj.tajikdictionary.R
+import androidx.activity.compose.LocalActivity
+import tj.tajikdictionary.ads.AdsManager
 import tj.tajikdictionary.data.dictionary.DictionaryRepository
 import tj.tajikdictionary.data.settings.FontScaleSetting
 import tj.tajikdictionary.data.settings.SettingsRepository
@@ -345,6 +347,7 @@ fun WordGameScreen(
         resetCardInputs()
         if (finishedNow) {
             roundFinished = true
+            AdsManager.recordFinishedRound()
         } else {
             cardPresentedAtMs = System.currentTimeMillis()
         }
@@ -395,6 +398,7 @@ fun WordGameScreen(
             resetCardInputs()
             if (finishedNow) {
                 roundFinished = true
+                AdsManager.recordFinishedRound()
                 scope.launch {
                     sessionXp += 20
                     userData.recordRoundCompleted(20)
@@ -585,8 +589,9 @@ fun WordGameScreen(
                         )
                     })
                     Spacer(Modifier.height(8.dp))
+                    val activity = LocalActivity.current
                     OutlinedButton(
-                        onClick = onBack,
+                        onClick = { AdsManager.showInterstitialIfDue(activity) { onBack() } },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(R.string.game_done)) }
                 }

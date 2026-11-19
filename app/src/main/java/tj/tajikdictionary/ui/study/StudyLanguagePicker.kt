@@ -58,13 +58,12 @@ private fun partnerName(mode: DictionaryMode): String = when (mode.partner) {
  */
 @Composable
 fun StudyLanguagePicker(settings: SettingsRepository, modifier: Modifier = Modifier) {
-    val studyMode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
+    val studyMode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_EN)
     val scope = rememberCoroutineScope()
     val label = stringResource(R.string.study_language)
-    Row(
+    Column(
         modifier = modifier.fillMaxWidth().semantics { contentDescription = label },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
             "${stringResource(R.string.lang_tajik)} ⇄",
@@ -73,31 +72,28 @@ fun StudyLanguagePicker(settings: SettingsRepository, modifier: Modifier = Modif
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
         )
-        Surface(
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
-        ) {
-            Row(modifier = Modifier.padding(3.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                DictionaryMode.entries.forEach { item ->
-                    val selected = item == studyMode
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(32.dp)
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
-                            .clickable(role = Role.Tab) { scope.launch { settings.setStudyMode(item) } },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            partnerName(item),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // English first so it is the leading/default choice.
+            listOf(DictionaryMode.TJ_EN, DictionaryMode.TJ_RU).forEach { item ->
+                val selected = item == studyMode
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceContainer,
                         )
-                    }
+                        .clickable(role = Role.Tab) { scope.launch { settings.setStudyMode(item) } },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        partnerName(item),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                    )
                 }
             }
         }

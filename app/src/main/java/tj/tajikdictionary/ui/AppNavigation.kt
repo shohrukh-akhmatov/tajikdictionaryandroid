@@ -38,6 +38,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import androidx.activity.compose.LocalActivity
+import tj.tajikdictionary.ads.AdsManager
+import tj.tajikdictionary.ads.AdPlacement
+import tj.tajikdictionary.ads.PinnedBanner
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import tj.tajikdictionary.ui.onboarding.OnboardingScreen
 import tj.tajikdictionary.ui.study.LearnProgressScreen
 import androidx.compose.ui.Modifier
@@ -138,6 +147,28 @@ fun TajikDictionaryRoot(
         onboardingChecked = true
     }
 
+    // Ads (consent first) start only once onboarding — and the placement test, if chosen — is over.
+    val activity = LocalActivity.current
+    var adsWaitForPlacement by rememberSaveable { mutableStateOf(false) }
+    var placementSeen by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(onboardingChecked, showOnboarding, adsWaitForPlacement, currentRoute) {
+        if (!onboardingChecked || showOnboarding) return@LaunchedEffect
+        if (adsWaitForPlacement) {
+            if (currentRoute == "placement") placementSeen = true
+            if (!placementSeen || currentRoute == "placement") return@LaunchedEffect
+            adsWaitForPlacement = false
+        }
+        activity?.let { AdsManager.start(it) }
+    }
+    // A pinned banner on every screen except Settings; the word detail screen has its own ad unit.
+    // Hidden while the keyboard is up, so it never sits between the text field and the keys.
+    val bannerPlacement = when {
+        currentRoute == null || showOnboarding || currentRoute == TopTab.SETTINGS.route -> null
+        currentRoute.startsWith("entry/") -> AdPlacement.ENTRY_BANNER
+        else -> AdPlacement.BANNER
+    }
+    val bannerVisible = bannerPlacement != null && !isImeVisible()
+
     Box(Modifier.fillMaxSize()) {
     KeyboardDismissRoot { dismissModifier ->
     Scaffold(
@@ -145,8 +176,14 @@ fun TajikDictionaryRoot(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
-            if (showBottomBar) {
+            if (showBottomBar || bannerVisible) {
                 Column {
+                    if (bannerVisible && bannerPlacement != null) PinnedBanner(bannerPlacement)
+                    if (!showBottomBar) {
+                        // No navigation bar on this screen: keep the banner above the system nav bar.
+                        Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
+                        return@Column
+                    }
                     HorizontalDivider(
                         thickness = 0.5.dp,
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
@@ -382,6 +419,10 @@ fun TajikDictionaryRoot(
             settings = container.settings,
             onFinish = { startPlacement ->
                 scope.launch { container.settings.setHasCompletedOnboarding(true) }
+                if (startPlacement) {
+                    placementSeen = false
+                    adsWaitForPlacement = true
+                }
                 showOnboarding = false
                 if (startPlacement) {
                     navController.navigate(TopTab.LEARN.route) {
@@ -396,3 +437,7 @@ fun TajikDictionaryRoot(
     }
     }
 }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun isImeVisible(): Boolean = WindowInsets.isImeVisible

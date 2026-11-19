@@ -321,4 +321,8 @@
     <string name="progress_link_title">Progress &amp; achievements</string>
     <string name="progress_link_words">words</string>
     <string name="progress_title">Progress</string>
+
+    <!-- Ads and GDPR consent (iOS StickyBannerView, Settings privacy row) -->
+    <string name="ad_label">Advertisement</string>
+    <string name="settings_privacy">Privacy settings</string>
 </resources>

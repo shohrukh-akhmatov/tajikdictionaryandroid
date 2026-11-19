@@ -11,6 +11,15 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.TajikDictionary">
 
+        <!-- AdMob app ID from build.gradle.kts (Google's test ID in debug, Config/AdUnits.properties in release). -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="${admobAppId}" />
+        <!-- Both ad SDKs are initialised by AdsManager, only after UMP consent allows ad requests. -->
+        <meta-data
+            android:name="com.yandex.mobile.ads.AUTOMATIC_SDK_INITIALIZATION"
+            android:value="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

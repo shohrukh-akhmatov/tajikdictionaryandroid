@@ -17,6 +17,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Yandex Mobile Ads 8.7+ is published only here (Maven Central stops at 8.6.0).
+        maven {
+            url = uri("https://ads.maven.yandex.net/")
+            content { includeGroup("com.yandex.android") }
+        }
     }
 }
 
