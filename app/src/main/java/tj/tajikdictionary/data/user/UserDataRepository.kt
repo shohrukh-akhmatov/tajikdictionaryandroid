@@ -1,12 +1,24 @@
 package tj.tajikdictionary.data.user
 
+import android.content.Context
+import android.content.SharedPreferences
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import tj.tajikdictionary.data.dictionary.DictionaryRepository
+import tj.tajikdictionary.data.settings.SettingsRepository
+import tj.tajikdictionary.domain.model.CefrLevel
 import tj.tajikdictionary.domain.model.DailyStudySnapshot
 import tj.tajikdictionary.domain.model.FlashcardScheduler
 import tj.tajikdictionary.domain.model.FlashcardState
 import tj.tajikdictionary.domain.model.Language
+import tj.tajikdictionary.domain.model.LearnerProfile
+import tj.tajikdictionary.domain.model.LexiconStats
+import tj.tajikdictionary.domain.model.ProfileStatsSnapshot
 import tj.tajikdictionary.domain.model.ReviewRating
 import tj.tajikdictionary.domain.model.WordCardCandidate
 import tj.tajikdictionary.domain.model.WordGameEngine
@@ -15,19 +27,57 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/** Favorites + history + flashcard & game progress on top of [UserDatabase]. */
-class UserDataRepository(private val db: UserDatabase) {
+/**
+ * Favorites + history + flashcard & game progress on top of [UserDatabase].
+ * Supports switching the active learner's [UserDatabase] at runtime so all observed flows
+ * emit the active profile's isolated learning store immediately.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class UserDataRepository(
+    initialDb: UserDatabase,
+    private val dbFactory: (String) -> UserDatabase = { initialDb },
+) {
 
     private val writeMutex = Mutex()
+    private val dbsByProfile = linkedMapOf(LearnerProfile.DEFAULT_PROFILE_ID to initialDb)
+    private val activeDbFlow = MutableStateFlow(initialDb)
+    private val db: UserDatabase get() = activeDbFlow.value
 
-    val favorites: Flow<List<FavoriteEntity>> = db.favorites().observeAll()
-    val history: Flow<List<HistoryEntity>> = db.history().observeRecent(HistoryDao.MAX_HISTORY)
-    val flashcards: Flow<List<FlashcardEntity>> = db.flashcards().observeAll()
-    val dailyStats: Flow<List<DailyStatsEntity>> = db.dailyStats().observeAll()
+    val favorites: Flow<List<FavoriteEntity>> = activeDbFlow.flatMapLatest { it.favorites().observeAll() }
+    val history: Flow<List<HistoryEntity>> = activeDbFlow.flatMapLatest { it.history().observeRecent(HistoryDao.MAX_HISTORY) }
+    val flashcards: Flow<List<FlashcardEntity>> = activeDbFlow.flatMapLatest { it.flashcards().observeAll() }
+    val dailyStats: Flow<List<DailyStatsEntity>> = activeDbFlow.flatMapLatest { it.dailyStats().observeAll() }
 
-    fun isFavorite(entryId: Long): Flow<Boolean> = db.favorites().observeIsFavorite(entryId)
+    fun isFavorite(entryId: Long): Flow<Boolean> = activeDbFlow.flatMapLatest { it.favorites().observeIsFavorite(entryId) }
 
-    fun flashcard(entryId: Long): Flow<FlashcardEntity?> = db.flashcards().observeOne(entryId)
+    fun flashcard(entryId: Long): Flow<FlashcardEntity?> = activeDbFlow.flatMapLatest { it.flashcards().observeOne(entryId) }
+
+    fun databaseForProfile(profileId: String): UserDatabase = synchronized(dbsByProfile) {
+        dbsByProfile.getOrPut(profileId) { dbFactory(profileId) }
+    }
+
+    fun switchProfile(profileId: String) {
+        val target = databaseForProfile(profileId)
+        if (activeDbFlow.value !== target) {
+            activeDbFlow.value = target
+        }
+    }
+
+    suspend fun deleteProfileData(context: Context?, profileId: String) = writeMutex.withLock {
+        if (profileId == LearnerProfile.DEFAULT_PROFILE_ID) {
+            val defaultDb = databaseForProfile(LearnerProfile.DEFAULT_PROFILE_ID)
+            defaultDb.favorites().clearAll()
+            defaultDb.history().clear()
+            defaultDb.flashcards().clearAll()
+            defaultDb.dailyStats().clearAll()
+        } else {
+            val removed = synchronized(dbsByProfile) { dbsByProfile.remove(profileId) }
+            runCatching { removed?.close() }
+            if (context != null) {
+                UserDatabase.deleteForProfile(context, profileId)
+            }
+        }
+    }
 
     suspend fun setFavorite(entryId: Long, language: Language, headword: String, preview: String, favorite: Boolean) {
         if (favorite) {
@@ -233,19 +283,130 @@ class UserDataRepository(private val db: UserDatabase) {
     }
 
     suspend fun importFullBackup(backup: FavoritesBackup.FullBackupData): Int = writeMutex.withLock {
-        backup.favorites.forEach { db.favorites().upsert(it) }
-        for (card in backup.flashcards) {
-            val existing = db.flashcards().get(card.entryId)
-            if (existing == null || card.masteryStage >= existing.masteryStage) {
-                db.flashcards().upsert(card)
+        importIntoDbLocked(db, backup.favorites, backup.flashcards, backup.dailyLogs)
+    }
+
+    /**
+     * Exports all local profiles (up to [LearnerProfile.MAX_PROFILES]) with their settings,
+     * saved words, flashcard progress, and daily logs into a cross-platform `ProfileBackup v1` JSON string.
+     */
+    suspend fun exportAllProfiles(settings: SettingsRepository): String = writeMutex.withLock {
+        val profileList = settings.profiles.first()
+        val activeId = settings.activeProfileId.first()
+        val entries = profileList.map { profile ->
+            val targetDb = databaseForProfile(profile.id)
+            val profileSettings = settings.getProfileSettingsBackup(profile.id)
+            FavoritesBackup.ProfileEntryBackup(
+                profile = profile,
+                settings = profileSettings,
+                favorites = targetDb.favorites().getAll(),
+                flashcards = targetDb.flashcards().getAll(),
+                dailyLogs = targetDb.dailyStats().getAll(),
+            )
+        }
+        FavoritesBackup.encodeProfiles(entries, activeProfileId = activeId)
+    }
+
+    /**
+     * Imports either a multi-profile `ProfileBackup v1` JSON or a legacy single-profile backup (v1/v2).
+     * Returns total number of favorite + flashcard records imported across all profiles.
+     */
+    suspend fun importProfilesBackup(
+        json: String,
+        settings: SettingsRepository,
+    ): Int = writeMutex.withLock {
+        val trimmed = json.trim()
+        val isMultiFormat = trimmed.contains("\"profiles\"")
+        if (!isMultiFormat) {
+            val decoded = FavoritesBackup.decodeFull(json)
+            val count = importIntoDbLocked(db, decoded.favorites, decoded.flashcards, decoded.dailyLogs)
+            decoded.placement?.let { p ->
+                settings.applyPlacementBackup(p.cefrLevel, p.ceilingFreq, p.baselineWords)
+            }
+            refreshProfileStatsLocked(settings.activeProfileId.first(), db, settings)
+            return@withLock count
+        }
+
+        val multi = FavoritesBackup.decodeProfiles(json)
+        var totalImported = 0
+        for (entry in multi.profiles) {
+            val shouldMakeActive = entry.profile.id == multi.activeProfileId
+            val targetProfile = settings.upsertImportedProfile(
+                incoming = entry.profile,
+                settingsBackup = entry.settings,
+                makeActive = shouldMakeActive,
+            ) ?: continue
+            val targetDb = databaseForProfile(targetProfile.id)
+            totalImported += importIntoDbLocked(targetDb, entry.favorites, entry.flashcards, entry.dailyLogs)
+            refreshProfileStatsLocked(targetProfile.id, targetDb, settings)
+        }
+        val activeId = settings.activeProfileId.first()
+        switchProfile(activeId)
+        totalImported
+    }
+
+    suspend fun computeAndSaveActiveProfileStats(settings: SettingsRepository) = writeMutex.withLock {
+        val activeId = settings.activeProfileId.first()
+        refreshProfileStatsLocked(activeId, databaseForProfile(activeId), settings)
+    }
+
+    private suspend fun refreshProfileStatsLocked(
+        profileId: String,
+        targetDb: UserDatabase,
+        settings: SettingsRepository,
+    ) {
+        val cards = targetDb.flashcards().getAll()
+        val logs = targetDb.dailyStats().getAll()
+        val cfg = settings.getProfileSettingsBackup(profileId)
+        val placementLvl = cfg.placementLevel?.let { code ->
+            CefrLevel.entries.firstOrNull { it.code.equals(code, ignoreCase = true) || it.name.equals(code, ignoreCase = true) }
+        }
+        val summary = WordGameEngine.computeSummary(
+            progress = cards.map { it.toSnapshot() },
+            logs = logs.map { it.toSnapshot() },
+            dailyGoal = cfg.dailyGoal,
+            lexiconStats = LexiconStats.FALLBACK,
+            placementLevel = placementLvl,
+            placementBaselineWords = cfg.placementBaselineWords,
+        )
+        val latestDateKey = logs.filter { it.wordsReviewed > 0 }.maxByOrNull { it.dateKey }?.dateKey
+        settings.updateProfileStats(
+            ProfileStatsSnapshot(
+                profileId = profileId,
+                currentStreakDays = summary.currentStreakDays,
+                longestStreakDays = summary.longestStreakDays,
+                totalXp = summary.totalXp,
+                masteredCount = summary.masteredCount,
+                knownWordsCount = summary.estimatedKnownWords,
+                todayReviewed = summary.todayReviewed,
+                dailyGoal = summary.dailyGoal,
+                cefrCode = summary.cefrLevel.code,
+                lastActiveDateKey = latestDateKey,
+            ),
+        )
+    }
+
+    private suspend fun importIntoDbLocked(
+        targetDb: UserDatabase,
+        favorites: List<FavoriteEntity>,
+        flashcards: List<FlashcardEntity>,
+        dailyLogs: List<DailyStatsEntity>,
+    ): Int {
+        favorites.forEach { targetDb.favorites().upsert(it) }
+        for (card in flashcards) {
+            val existing = targetDb.flashcards().get(card.entryId)
+            val incomingLast = card.lastReviewedAt ?: 0L
+            val existingLast = existing?.lastReviewedAt ?: 0L
+            if (existing == null || incomingLast > existingLast || card.masteryStage >= existing.masteryStage) {
+                targetDb.flashcards().upsert(UserDataRepository.mergeFlashcards(card, existing))
             }
         }
-        for (log in backup.dailyLogs) {
-            val existing = db.dailyStats().get(log.dateKey)
+        for (log in dailyLogs) {
+            val existing = targetDb.dailyStats().get(log.dateKey)
             if (existing == null) {
-                db.dailyStats().upsert(log)
+                targetDb.dailyStats().upsert(log)
             } else {
-                db.dailyStats().upsert(
+                targetDb.dailyStats().upsert(
                     DailyStatsEntity(
                         dateKey = log.dateKey,
                         wordsReviewed = max(existing.wordsReviewed, log.wordsReviewed),
@@ -258,7 +419,126 @@ class UserDataRepository(private val db: UserDatabase) {
                 )
             }
         }
-        backup.favorites.size + backup.flashcards.size
+        return favorites.size + flashcards.size
+    }
+
+    /**
+     * Re-links stored Favorites, History, and Flashcards by `(lang, headword)` whenever the bundled
+     * `dictionary.sqlite` `data_version` changes so user records survive dictionary rebuilds.
+     */
+    suspend fun relinkIfNeeded(
+        dictionary: DictionaryRepository,
+        prefs: SharedPreferences? = null,
+    ): Int = writeMutex.withLock {
+        val dataVersion = dictionary.info().dataVersion
+        if (prefs != null && dataVersion.isNotEmpty() && prefs.getString(PREF_RELINKED_DATA_VERSION, null) == dataVersion) {
+            return@withLock 0
+        }
+        val relinked = relinkAllLocked(
+            lookupEntry = { id -> dictionary.entry(id)?.let { it.language.code to it.headword } },
+            resolveId = { lang, hw -> dictionary.resolveEntryId(lang, hw) },
+        )
+        if (prefs != null && dataVersion.isNotEmpty()) {
+            prefs.edit().putString(PREF_RELINKED_DATA_VERSION, dataVersion).apply()
+        }
+        relinked
+    }
+
+    internal suspend fun relinkAllLocked(
+        lookupEntry: suspend (Long) -> Pair<String, String>?,
+        resolveId: suspend (String, String) -> Long?,
+    ): Int {
+        var relinkedCount = 0
+
+        for (fav in db.favorites().getAll()) {
+            val current = lookupEntry(fav.entryId)
+            if (current != null && current.first == fav.lang && current.second.equals(fav.headword, ignoreCase = true)) {
+                continue
+            }
+            val newId = resolveId(fav.lang, fav.headword) ?: continue
+            val targetEntry = lookupEntry(newId)
+            val newHeadword = targetEntry?.second ?: fav.headword
+            if (newId != fav.entryId) {
+                val existingTarget = db.favorites().get(newId)
+                val merged = mergeFavorites(fav.copy(entryId = newId, headword = newHeadword), existingTarget)
+                db.favorites().delete(fav.entryId)
+                db.favorites().upsert(merged)
+                relinkedCount++
+            } else if (newHeadword != fav.headword) {
+                db.favorites().upsert(fav.copy(headword = newHeadword))
+                relinkedCount++
+            }
+        }
+
+        for (hist in db.history().getAll()) {
+            val current = lookupEntry(hist.entryId)
+            if (current != null && current.first == hist.lang && current.second.equals(hist.headword, ignoreCase = true)) {
+                continue
+            }
+            val newId = resolveId(hist.lang, hist.headword) ?: continue
+            val targetEntry = lookupEntry(newId)
+            val newHeadword = targetEntry?.second ?: hist.headword
+            if (newId != hist.entryId) {
+                val existingTarget = db.history().get(newId)
+                val merged = mergeHistory(hist.copy(entryId = newId, headword = newHeadword), existingTarget)
+                db.history().delete(hist.entryId)
+                db.history().upsert(merged)
+                relinkedCount++
+            } else if (newHeadword != hist.headword) {
+                db.history().upsert(hist.copy(headword = newHeadword))
+                relinkedCount++
+            }
+        }
+
+        for (card in db.flashcards().getAll()) {
+            val current = lookupEntry(card.entryId)
+            if (current != null && current.first == card.lang && current.second.equals(card.headword, ignoreCase = true)) {
+                continue
+            }
+            val newId = resolveId(card.lang, card.headword) ?: continue
+            val targetEntry = lookupEntry(newId)
+            val newHeadword = targetEntry?.second ?: card.headword
+            if (newId != card.entryId) {
+                val existingTarget = db.flashcards().get(newId)
+                val merged = mergeFlashcards(card.copy(entryId = newId, headword = newHeadword), existingTarget)
+                db.flashcards().delete(card.entryId)
+                db.flashcards().upsert(merged)
+                relinkedCount++
+            } else if (newHeadword != card.headword) {
+                db.flashcards().upsert(card.copy(headword = newHeadword))
+                relinkedCount++
+            }
+        }
+
+        return relinkedCount
+    }
+
+    companion object {
+        private const val PREF_RELINKED_DATA_VERSION = "relinked_data_version"
+
+        internal fun mergeFavorites(incoming: FavoriteEntity, existing: FavoriteEntity?): FavoriteEntity =
+            if (existing == null) incoming else existing.copy(addedAt = min(existing.addedAt, incoming.addedAt))
+
+        internal fun mergeHistory(incoming: HistoryEntity, existing: HistoryEntity?): HistoryEntity =
+            if (existing == null) incoming else existing.copy(viewedAt = max(existing.viewedAt, incoming.viewedAt))
+
+        internal fun mergeFlashcards(incoming: FlashcardEntity, existing: FlashcardEntity?): FlashcardEntity {
+            if (existing == null) return incoming
+            val winner = when {
+                incoming.masteryStage > existing.masteryStage -> incoming
+                existing.masteryStage > incoming.masteryStage -> existing
+                incoming.repetitions >= existing.repetitions -> incoming
+                else -> existing
+            }
+            return winner.copy(
+                repetitions = max(incoming.repetitions, existing.repetitions),
+                intervalDays = max(incoming.intervalDays, existing.intervalDays),
+                masteryStage = max(incoming.masteryStage, existing.masteryStage),
+                stabilityDays = max(incoming.stabilityDays, existing.stabilityDays),
+                lapses = max(incoming.lapses, existing.lapses),
+                isKnownSkipped = incoming.isKnownSkipped || existing.isKnownSkipped,
+            )
+        }
     }
 
     private suspend fun markEntryKnownLocked(

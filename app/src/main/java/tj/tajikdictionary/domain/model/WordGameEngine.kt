@@ -42,11 +42,11 @@ data class LexiconStats(
 ) {
     companion object {
         val FALLBACK = LexiconStats(
-            totalTajik = 16_358,
-            tier90Count = 290,
-            tier80Count = 1_474,
-            tier70Count = 4_536,
-            tierOtherCount = 10_058,
+            totalTajik = 18_447,
+            tier90Count = 307,
+            tier80Count = 1_534,
+            tier70Count = 4_555,
+            tierOtherCount = 12_051,
         )
     }
 }
@@ -130,6 +130,10 @@ data class GameRoundItem(
     val requiredCorrectInRound: Int = 1,
     val correctInRound: Int = 0,
     val hadMistakeInRound: Boolean = false,
+    val targetAnswer: String = WordGameEngine.primaryTargetWord(card.preview).ifEmpty { card.headword },
+    val buildTarget: String = WordGameEngine.buildTargetWord(card.preview).ifEmpty { card.headword },
+    val acceptedAnswers: List<String> = WordGameEngine.acceptedTargetAnswers(card.preview).ifEmpty { listOf(card.headword) },
+    val clozeTranslation: String? = null,
 )
 
 sealed interface AnswerCheckResult {
@@ -352,6 +356,49 @@ object WordGameEngine {
         ).take(roundSize)
     }
 
+    private val PAREN_NOTE_RE = Regex("\\([^)]*\\)")
+    private val SPLIT_GLOSS_RE = Regex("[,;/]")
+    private val FALLBACK_EN_DISTRACTORS = listOf("water", "house", "book", "time", "school", "friend")
+    private val FALLBACK_RU_DISTRACTORS = listOf("вода", "дом", "книга", "время", "школа", "друг")
+
+    /** Extracts the primary (#1 sense-ordered) target-language word from [preview]. */
+    fun primaryTargetWord(preview: String): String {
+        val cleaned = PAREN_NOTE_RE.replace(preview, "")
+        return cleaned.split(SPLIT_GLOSS_RE)
+            .map { it.trim() }
+            .firstOrNull { it.isNotEmpty() }
+            .orEmpty()
+    }
+
+    /** Strips leading English infinitive `"to "` for tile building and typing hints. */
+    fun stripInfinitivePrefix(word: String): String {
+        val trimmed = word.trim()
+        return if (trimmed.length > 3 && trimmed.startsWith("to ", ignoreCase = true)) {
+            trimmed.substring(3).trim()
+        } else {
+            trimmed
+        }
+    }
+
+    /** Clean target word used for Word Builder tiles and typing hints. */
+    fun buildTargetWord(preview: String): String =
+        stripInfinitivePrefix(primaryTargetWord(preview))
+
+    /** All valid synonymous target translations from [preview] (including bare verbs without `"to "`). */
+    fun acceptedTargetAnswers(preview: String): List<String> {
+        val cleaned = PAREN_NOTE_RE.replace(preview, "")
+        val out = ArrayList<String>()
+        val seen = HashSet<String>()
+        for (part in cleaned.split(SPLIT_GLOSS_RE)) {
+            val t = part.trim()
+            if (t.isEmpty()) continue
+            if (seen.add(t.lowercase())) out += t
+            val bare = stripInfinitivePrefix(t)
+            if (bare.isNotEmpty() && seen.add(bare.lowercase())) out += bare
+        }
+        return out
+    }
+
     fun challengeKind(masteryStage: Int, headword: String): ChallengeKind {
         val len = headword.trim().length
         return when {
@@ -373,13 +420,29 @@ object WordGameEngine {
     ): List<GameRoundItem> = selected.map { card ->
         val existing = progressById[card.entryId]
         val stage = existing?.masteryStage ?: 0
+        val targetAnswer = primaryTargetWord(card.preview).ifEmpty { card.headword }
+        val buildTarget = buildTargetWord(card.preview).ifEmpty { targetAnswer }
+        val acceptedAnswers = acceptedTargetAnswers(card.preview).ifEmpty { listOf(targetAnswer) }
+        val partnerCloze = makeClozeSentence(card.examplePartner, buildTarget)
+            ?: makeClozeSentence(card.examplePartner, targetAnswer)
+        val tgCloze = makeClozeSentence(card.exampleTg, card.headword)
+        val clozeSentence = partnerCloze ?: tgCloze
+        val clozeTranslation = if (partnerCloze != null) {
+            card.exampleTg?.takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
         GameRoundItem(
             card = card,
-            challengeKind = challengeKind(stage, card.headword),
+            challengeKind = challengeKind(stage, buildTarget),
             choices = makeChoices(card, allPool, fallbackDistractors),
-            tiles = makeTiles(card.headword),
-            clozeSentence = makeClozeSentence(card.exampleTg, card.headword),
+            tiles = makeTiles(buildTarget),
+            clozeSentence = clozeSentence,
             isNewWord = existing?.lastReviewedAtMs == null,
+            targetAnswer = targetAnswer,
+            buildTarget = buildTarget,
+            acceptedAnswers = acceptedAnswers,
+            clozeTranslation = clozeTranslation,
         )
     }
 
@@ -388,23 +451,33 @@ object WordGameEngine {
         pool: List<WordCardCandidate>,
         fallbackDistractors: List<String>,
     ): List<String> {
-        val seen = HashSet<String>().apply { add(card.headword.lowercase()) }
+        val correctChoice = primaryTargetWord(card.preview).ifEmpty { card.headword }
+        val targetIsLatin = TajikTransliterator.looksLatin(correctChoice)
+        val seen = HashSet<String>().apply {
+            add(correctChoice.lowercase())
+            acceptedTargetAnswers(card.preview).forEach { add(it.lowercase()) }
+        }
         val distractors = ArrayList<String>(3)
+
+        fun matchesScript(candidate: String): Boolean =
+            !targetIsLatin || TajikTransliterator.looksLatin(candidate)
 
         val samePos = pool
             .filter { it.entryId != card.entryId && it.pos == card.pos }
             .sortedBy { abs(it.frequency - card.frequency) }
         for (item in samePos) {
-            if (seen.add(item.headword.lowercase())) {
-                distractors += item.headword
+            val choice = primaryTargetWord(item.preview).ifEmpty { item.headword }
+            if (choice.isNotEmpty() && matchesScript(choice) && seen.add(choice.lowercase())) {
+                distractors += choice
                 if (distractors.size == 3) break
             }
         }
 
         if (distractors.size < 3) {
             for (item in pool.filter { it.entryId != card.entryId }.shuffled()) {
-                if (seen.add(item.headword.lowercase())) {
-                    distractors += item.headword
+                val choice = primaryTargetWord(item.preview).ifEmpty { item.headword }
+                if (choice.isNotEmpty() && matchesScript(choice) && seen.add(choice.lowercase())) {
+                    distractors += choice
                     if (distractors.size == 3) break
                 }
             }
@@ -412,6 +485,17 @@ object WordGameEngine {
 
         if (distractors.size < 3) {
             for (word in fallbackDistractors.shuffled()) {
+                val clean = primaryTargetWord(word).ifEmpty { word.trim() }
+                if (clean.isNotEmpty() && matchesScript(clean) && seen.add(clean.lowercase())) {
+                    distractors += clean
+                    if (distractors.size == 3) break
+                }
+            }
+        }
+
+        if (distractors.size < 3) {
+            val builtIn = if (targetIsLatin) FALLBACK_EN_DISTRACTORS else FALLBACK_RU_DISTRACTORS
+            for (word in builtIn) {
                 if (seen.add(word.lowercase())) {
                     distractors += word
                     if (distractors.size == 3) break
@@ -419,7 +503,7 @@ object WordGameEngine {
             }
         }
 
-        return (listOf(card.headword) + distractors).shuffled()
+        return (listOf(correctChoice) + distractors).shuffled()
     }
 
     fun makeTiles(headword: String): List<String> {
@@ -448,28 +532,50 @@ object WordGameEngine {
         return example.replaceRange(match.range, "____")
     }
 
-    fun checkTypedAnswer(input: String, target: String): AnswerCheckResult {
+    fun checkTypedAnswer(
+        input: String,
+        target: String,
+        acceptedAnswers: List<String> = emptyList(),
+    ): AnswerCheckResult {
         val trimmedInput = input.trim()
         val trimmedTarget = target.trim()
         if (trimmedInput.isEmpty()) return AnswerCheckResult.Wrong
-        if (trimmedInput.equals(trimmedTarget, ignoreCase = true)) {
+
+        val candidates = buildList {
+            if (trimmedTarget.isNotEmpty()) {
+                add(trimmedTarget)
+                add(stripInfinitivePrefix(trimmedTarget))
+            }
+            for (syn in acceptedAnswers) {
+                val t = syn.trim()
+                if (t.isNotEmpty()) {
+                    add(t)
+                    add(stripInfinitivePrefix(t))
+                }
+            }
+        }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }
+
+        if (candidates.any { it.equals(trimmedInput, ignoreCase = true) }) {
             return AnswerCheckResult.Exact
         }
+
         val normInput = TextNormalizer.searchKey(trimmedInput)
-        val normTarget = TextNormalizer.searchKey(trimmedTarget)
-        if (normInput.isNotEmpty() && normInput == normTarget) {
-            return AnswerCheckResult.TajikLetterNearMiss(trimmedTarget)
-        }
-        // Learners without a Tajik keyboard may type Latin ("salom" for "салом").
-        if (TajikTransliterator.looksLatin(trimmedInput)) {
-            val translitKey = TextNormalizer.searchKey(TajikTransliterator.fromLatin(trimmedInput))
-            if (translitKey.isNotEmpty() && translitKey == normTarget) {
-                return AnswerCheckResult.TajikLetterNearMiss(trimmedTarget)
+        for (cand in candidates) {
+            val normTarget = TextNormalizer.searchKey(cand)
+            if (normInput.isNotEmpty() && normInput == normTarget) {
+                return AnswerCheckResult.TajikLetterNearMiss(cand)
             }
-        }
-        // One slip of the finger on a longer word: show the correct spelling instead of failing.
-        if (normTarget.length >= 5 && withinOneEdit(normInput, normTarget)) {
-            return AnswerCheckResult.TajikLetterNearMiss(trimmedTarget)
+            // Learners without a Tajik keyboard may type Latin ("salom" for "салом").
+            if (!TajikTransliterator.looksLatin(cand) && TajikTransliterator.looksLatin(trimmedInput)) {
+                val translitKey = TextNormalizer.searchKey(TajikTransliterator.fromLatin(trimmedInput))
+                if (translitKey.isNotEmpty() && translitKey == normTarget) {
+                    return AnswerCheckResult.TajikLetterNearMiss(cand)
+                }
+            }
+            // One slip of the finger on a longer word: show the correct spelling instead of failing.
+            if (normTarget.length >= 5 && withinOneEdit(normInput, normTarget)) {
+                return AnswerCheckResult.TajikLetterNearMiss(cand)
+            }
         }
         return AnswerCheckResult.Wrong
     }

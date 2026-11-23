@@ -90,6 +90,7 @@ import tj.tajikdictionary.domain.model.ChallengeKind
 import tj.tajikdictionary.domain.model.DictionaryMode
 import tj.tajikdictionary.domain.model.GameRoundItem
 import tj.tajikdictionary.domain.model.Language
+import tj.tajikdictionary.domain.model.LearnerProfile
 import tj.tajikdictionary.domain.model.LexiconStats
 import tj.tajikdictionary.domain.model.WordCardCandidate
 import tj.tajikdictionary.domain.model.WordGameEngine
@@ -120,7 +121,7 @@ fun WordGameScreen(
     settings: SettingsRepository,
     onBack: () -> Unit,
 ) {
-    val mode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
+    val mode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_EN)
     val speechRate by settings.speechRate.collectAsStateWithLifecycle(initialValue = 1.0f)
     val fontScale by settings.fontScale.collectAsStateWithLifecycle(initialValue = FontScaleSetting.MEDIUM)
     val dailyGoal by settings.dailyGoal.collectAsStateWithLifecycle(initialValue = 10)
@@ -128,6 +129,7 @@ fun WordGameScreen(
     val placementCeilingFreq by settings.placementCeilingFreq.collectAsStateWithLifecycle(initialValue = 100)
     val placementBaselineWords by settings.placementBaselineWords.collectAsStateWithLifecycle(initialValue = 0)
     val hasCompletedPlacement by settings.hasCompletedPlacement.collectAsStateWithLifecycle(initialValue = false)
+    val activeProfile by settings.activeProfile.collectAsStateWithLifecycle(initialValue = LearnerProfile.defaultProfile())
     val flashcards by userData.flashcards.collectAsStateWithLifecycle(initialValue = emptyList())
     val dailyStats by userData.dailyStats.collectAsStateWithLifecycle(initialValue = emptyList())
     val lexiconStats by produceState(initialValue = LexiconStats.FALLBACK, dictionary) {
@@ -186,7 +188,7 @@ fun WordGameScreen(
         positiveFeedback = false
     }
 
-    LaunchedEffect(source, mode, roundVersion) {
+    LaunchedEffect(source, mode, roundVersion, activeProfile.id, activeProfile.kind) {
         isLoading = true
         roundFinished = false
         graduatedCount = 0
@@ -197,6 +199,7 @@ fun WordGameScreen(
         newlyLearnedInRound = 0
         resetCardInputs()
 
+        val roundSize = activeProfile.kind.roundSize
         val progressEntities = userData.flashcards.first()
         val progressMap = progressEntities.associate { it.entryId to it.toSnapshot() }
         val ceilingFreq = if (hasCompletedPlacement) placementCeilingFreq else 100
@@ -219,7 +222,7 @@ fun WordGameScreen(
                         merged += item
                     }
                 }
-                if (merged.size < WordGameEngine.DEFAULT_ROUND_SIZE && ceilingFreq < 100) {
+                if (merged.size < roundSize && ceilingFreq < 100) {
                     for (item in dictionary.learningCandidates(topic = null, mode = mode, maxFrequency = 100, limit = 200)) {
                         if (seen.add(item.entryId)) {
                             merged += item
@@ -248,37 +251,62 @@ fun WordGameScreen(
             val extra = dictionary.learningCandidates(topic = null, mode = mode, limit = 150)
             (pool + extra).distinctBy { it.entryId }
         }
-        val fallback = dictionary.topTajikHeadwords(60)
+        val fallback = distractorPool
+            .mapNotNull { WordGameEngine.primaryTargetWord(it.preview).takeIf(String::isNotBlank) }
+            .distinct()
         val selected = when (source) {
             GameDeckSource.DueReviews -> WordGameEngine.buildDueRoundQueue(
                 candidates = pool,
                 progressById = progressMap,
-                roundSize = WordGameEngine.DEFAULT_ROUND_SIZE,
+                roundSize = roundSize,
             )
 
             GameDeckSource.WeakWords -> WordGameEngine.buildWeakRoundQueue(
                 candidates = pool,
                 progressById = progressMap,
-                roundSize = WordGameEngine.DEFAULT_ROUND_SIZE,
+                roundSize = roundSize,
             )
 
             else -> WordGameEngine.buildRoundQueue(
                 candidates = pool,
                 progressById = progressMap,
-                roundSize = WordGameEngine.DEFAULT_ROUND_SIZE,
+                roundSize = roundSize,
                 targetMaxFrequency = if (source == GameDeckSource.SmartMix) ceilingFreq else null,
             )
         }
-        val items = WordGameEngine.makeRoundItems(
+        val rawItems = WordGameEngine.makeRoundItems(
             selected = selected,
             allPool = distractorPool,
             fallbackDistractors = fallback,
             progressById = progressMap,
         )
+        val items = if (activeProfile.isChild) {
+            rawItems.map { item ->
+                if (item.challengeKind == ChallengeKind.TYPING) {
+                    item.copy(challengeKind = ChallengeKind.WORD_BUILDER)
+                } else {
+                    item
+                }
+            }
+        } else {
+            rawItems
+        }
         queue = items
         initialCount = items.size
         cardPresentedAtMs = System.currentTimeMillis()
         isLoading = false
+    }
+
+    fun speakTarget(word: String, entryId: Long) {
+        if (!ttsReady || word.isBlank()) return
+        val locale = if (mode.partner == Language.RUSSIAN) {
+            Locale.forLanguageTag("ru")
+        } else {
+            Locale.US
+        }
+        tts.language = locale
+        tts.setSpeechRate(speechRate)
+        tts.speak(word, TextToSpeech.QUEUE_FLUSH, null, "game_$entryId")
     }
 
     fun triggerDontKnow() {
@@ -288,6 +316,7 @@ fun WordGameScreen(
         comboCount = 0
         showingTeachingSheet = true
         positiveFeedback = false
+        speakTarget(current.buildTarget, current.card.entryId)
         val elapsed = max(0L, System.currentTimeMillis() - cardPresentedAtMs)
         scope.launch {
             userData.recordGameReview(
@@ -305,7 +334,7 @@ fun WordGameScreen(
         val mutable = queue.toMutableList()
         var item = mutable.removeAt(0)
         val downgradedKind = if (item.challengeKind == ChallengeKind.TYPING) {
-            WordGameEngine.challengeKind(1, item.card.headword)
+            WordGameEngine.challengeKind(1, item.buildTarget)
         } else {
             item.challengeKind
         }
@@ -371,9 +400,10 @@ fun WordGameScreen(
 
     fun submitText(input: String, item: GameRoundItem) {
         hideKeyboard() // Check button and the keyboard's Enter both land here
-        when (val res = WordGameEngine.checkTypedAnswer(input, item.card.headword)) {
+        when (val res = WordGameEngine.checkTypedAnswer(input, item.buildTarget, item.acceptedAnswers)) {
             AnswerCheckResult.Exact -> {
                 nearMissTarget = null
+                speakTarget(item.buildTarget, item.card.entryId)
                 completeAnswer(isCorrect = true, usedHintOrNearMiss = usedHint)
             }
             is AnswerCheckResult.TajikLetterNearMiss -> {
@@ -504,17 +534,27 @@ fun WordGameScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Icon(
-                        Icons.Filled.EmojiEvents,
-                        contentDescription = null,
-                        tint = Color(0xFFFFB300),
-                        modifier = Modifier.size(64.dp),
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        ProfileAvatarCircle(
+                            avatar = activeProfile.avatar,
+                            colorHex = activeProfile.colorHex,
+                        )
+                        Icon(
+                            Icons.Filled.EmojiEvents,
+                            contentDescription = null,
+                            tint = Color(0xFFFFB300),
+                            modifier = Modifier.size(56.dp),
+                        )
+                    }
                     Spacer(Modifier.height(14.dp))
                     Text(
-                        stringResource(R.string.game_round_complete),
+                        stringResource(R.string.profile_round_complete_named, activeProfile.localizedDisplayName()),
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
@@ -591,7 +631,13 @@ fun WordGameScreen(
                     Spacer(Modifier.height(8.dp))
                     val activity = LocalActivity.current
                     OutlinedButton(
-                        onClick = { AdsManager.showInterstitialIfDue(activity) { onBack() } },
+                        onClick = {
+                            if (activeProfile.isChild) {
+                                onBack()
+                            } else {
+                                AdsManager.showInterstitialIfDue(activity) { onBack() }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(R.string.game_done)) }
                 }
@@ -698,29 +744,37 @@ fun WordGameScreen(
                                     }
                                 }
 
-                                if (ttsReady && item.card.preview.isNotBlank()) {
+                                if (ttsReady && item.buildTarget.isNotBlank() && item.challengeKind != ChallengeKind.MULTIPLE_CHOICE) {
                                     IconButton(
-                                        onClick = {
-                                            val locale = if (mode.partner == Language.RUSSIAN) {
-                                                Locale.forLanguageTag("ru")
-                                            } else {
-                                                Locale.US
-                                            }
-                                            tts.language = locale
-                                            tts.setSpeechRate(speechRate)
-                                            tts.speak(item.card.preview, TextToSpeech.QUEUE_FLUSH, null, "game_${item.card.entryId}")
-                                        },
+                                        onClick = { speakTarget(item.buildTarget, item.card.entryId) },
                                     ) {
                                         Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = stringResource(R.string.listen))
                                     }
                                 }
                             }
 
+                            val partnerLangLabel = if (mode.partner == Language.ENGLISH) {
+                                stringResource(R.string.lang_english)
+                            } else {
+                                stringResource(R.string.lang_russian)
+                            }
                             val baseSize = MaterialTheme.typography.headlineSmall
                             Text(
-                                text = item.card.preview,
+                                text = item.card.headword,
                                 style = baseSize.copy(fontSize = baseSize.fontSize * fontScale.scale),
                                 fontWeight = FontWeight.Bold,
+                            )
+                            val directionLabel = if (item.challengeKind == ChallengeKind.MULTIPLE_CHOICE) {
+                                "${stringResource(R.string.lang_tajik)} → $partnerLangLabel"
+                            } else {
+                                val pattern = item.buildTarget.map { if (it == ' ') "  " else "_" }.joinToString(" ")
+                                "${stringResource(R.string.lang_tajik)} → $partnerLangLabel  ·  $pattern (${item.buildTarget.length})"
+                            }
+                            Text(
+                                text = directionLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
                             )
 
                             item.clozeSentence?.let { cloze ->
@@ -729,11 +783,23 @@ fun WordGameScreen(
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
-                                    Text(
-                                        text = cloze,
-                                        style = MaterialTheme.typography.bodyMedium,
+                                    Column(
                                         modifier = Modifier.padding(10.dp),
-                                    )
+                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Text(
+                                            text = cloze,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                        )
+                                        item.clozeTranslation?.takeIf { it.isNotBlank() }?.let { trans ->
+                                            Text(
+                                                text = trans,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -754,21 +820,42 @@ fun WordGameScreen(
                                 modifier = Modifier.padding(18.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        stringResource(R.string.game_learn_this_word),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = Color(0xFFE65100),
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    if (ttsReady && item.buildTarget.isNotBlank()) {
+                                        IconButton(
+                                            onClick = { speakTarget(item.buildTarget, item.card.entryId) },
+                                        ) {
+                                            Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = stringResource(R.string.listen))
+                                        }
+                                    }
+                                }
                                 Text(
-                                    stringResource(R.string.game_learn_this_word),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = Color(0xFFE65100),
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                Text(
-                                    item.card.headword,
+                                    item.targetAnswer,
                                     style = MaterialTheme.typography.headlineMedium,
                                     fontWeight = FontWeight.Bold,
                                 )
+                                if (!item.card.preview.equals(item.targetAnswer, ignoreCase = true) && item.card.preview.isNotBlank()) {
+                                    Text(
+                                        item.card.preview,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                                 Text(
-                                    item.card.preview,
+                                    item.card.headword,
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold,
                                 )
                                 item.card.exampleTg?.takeIf { it.isNotBlank() }?.let { exTg ->
                                     Surface(
@@ -777,10 +864,10 @@ fun WordGameScreen(
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
                                         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            Text(exTg, fontWeight = FontWeight.SemiBold)
                                             item.card.examplePartner?.takeIf { it.isNotBlank() }?.let { exP ->
-                                                Text(exP, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Text(exP, fontWeight = FontWeight.SemiBold)
                                             }
+                                            Text(exTg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                 }
@@ -796,12 +883,17 @@ fun WordGameScreen(
                             }
                         }
                     } else {
+                        val partnerLangLabel = if (mode.partner == Language.ENGLISH) {
+                            stringResource(R.string.lang_english)
+                        } else {
+                            stringResource(R.string.lang_russian)
+                        }
                         when (item.challengeKind) {
                             ChallengeKind.MULTIPLE_CHOICE -> {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     item.choices.forEach { choice ->
                                         val isPicked = selectedChoice == choice
-                                        val isRight = choice == item.card.headword
+                                        val isRight = choice.equals(item.targetAnswer, ignoreCase = true)
                                         val bgColor = when {
                                             selectedChoice == null -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                                             isRight -> Color(0xFF2E7D32).copy(alpha = 0.22f)
@@ -815,8 +907,9 @@ fun WordGameScreen(
                                                 .fillMaxWidth()
                                                 .clickable(enabled = selectedChoice == null) {
                                                     selectedChoice = choice
-                                                    if (choice == item.card.headword) {
+                                                    if (isRight) {
                                                         positiveFeedback = true
+                                                        speakTarget(item.buildTarget, item.card.entryId)
                                                         scope.launch {
                                                             delay(300)
                                                             completeAnswer(isCorrect = true, usedHintOrNearMiss = false)
@@ -891,16 +984,12 @@ fun WordGameScreen(
                                     value = typedField,
                                     onValueChange = { typedField = it },
                                     modifier = Modifier.fillMaxWidth().keyboardDismissExempt(),
-                                    placeholder = { Text(stringResource(R.string.game_type_hint)) },
+                                    placeholder = { Text("$partnerLangLabel (${item.buildTarget.length})…") },
                                     singleLine = true,
                                     shape = RoundedCornerShape(14.dp),
                                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                                     keyboardActions = KeyboardActions(onDone = { submitText(typedField.text, item) }),
                                 )
-
-                                if (item.card.language == Language.TAJIK) {
-                                    TajikLettersRow(onLetter = { ch -> typedField = typedField.insertAtCaret(ch) })
-                                }
 
                                 nearMissTarget?.let { target ->
                                     Surface(
@@ -919,7 +1008,10 @@ fun WordGameScreen(
                                                 color = Color(0xFFE65100),
                                             )
                                             OutlinedButton(
-                                                onClick = { completeAnswer(isCorrect = true, usedHintOrNearMiss = true) },
+                                                onClick = {
+                                                    speakTarget(item.buildTarget, item.card.entryId)
+                                                    completeAnswer(isCorrect = true, usedHintOrNearMiss = true)
+                                                },
                                                 modifier = Modifier.fillMaxWidth(),
                                             ) { Text(stringResource(R.string.game_use_target, target)) }
                                         }
@@ -933,7 +1025,7 @@ fun WordGameScreen(
                                     OutlinedButton(
                                         onClick = {
                                             usedHint = true
-                                            val prefix = item.card.headword.take(2)
+                                            val prefix = item.buildTarget.take(2)
                                             if (!typedField.text.lowercase().startsWith(prefix.lowercase())) {
                                                 typedField = TextFieldValue(prefix, TextRange(prefix.length))
                                             }
@@ -966,7 +1058,7 @@ fun WordGameScreen(
                                 Text(stringResource(R.string.game_dont_know))
                             }
 
-                            if (item.isNewWord) {
+                            if (item.isNewWord && !activeProfile.isChild) {
                                 TextButton(onClick = { markAlreadyKnown(item) }) {
                                     Text(stringResource(R.string.game_already_know))
                                 }

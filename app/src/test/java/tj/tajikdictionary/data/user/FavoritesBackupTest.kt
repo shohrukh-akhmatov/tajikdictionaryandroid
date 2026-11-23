@@ -73,4 +73,79 @@ class FavoritesBackupTest {
         assertEquals(emptyList<DailyStatsEntity>(), decodedV1.dailyLogs)
         assertEquals(null, decodedV1.placement)
     }
+
+    @Test
+    fun multiProfileBackupV1RoundTripAndLegacyFallback() {
+        val p1 = tj.tajikdictionary.domain.model.LearnerProfile.defaultProfile(name = "Parent", createdAtMs = 1_731_000_000_000L)
+        val p2 = tj.tajikdictionary.domain.model.LearnerProfile(
+            id = "p_child1",
+            name = "Zarina",
+            avatar = "🦊",
+            colorHex = "#E65100",
+            kind = tj.tajikdictionary.domain.model.ProfileKind.CHILD,
+            createdAtMs = 1_731_000_100_000L,
+        )
+        val entries = listOf(
+            FavoritesBackup.ProfileEntryBackup(
+                profile = p1,
+                settings = FavoritesBackup.ProfileSettingsBackup(
+                    studyMode = "TJ_RU",
+                    dailyGoal = 15,
+                    placementLevel = "A2",
+                    placementCeilingFreq = 82,
+                    placementBaselineWords = 500,
+                ),
+                favorites = listOf(FavoriteEntity(42L, "tg", "китоб", "книга", 1_731_000_000_000L)),
+                flashcards = listOf(
+                    FlashcardEntity(
+                        entryId = 42L,
+                        lang = "tg",
+                        headword = "китоб",
+                        preview = "книга",
+                        repetitions = 4,
+                        intervalDays = 10,
+                        easeFactor = 2.5,
+                        nextReviewAt = 1_731_900_000_000L,
+                        masteryStage = 3,
+                        stabilityDays = 10.0,
+                        lapses = 0,
+                        lastReviewedAt = 1_731_000_000_000L,
+                        isKnownSkipped = false,
+                    ),
+                ),
+                dailyLogs = listOf(DailyStatsEntity("2026-11-22", 15, 5, 180, 2, 300, 14)),
+            ),
+            FavoritesBackup.ProfileEntryBackup(
+                profile = p2,
+                settings = FavoritesBackup.ProfileSettingsBackup(
+                    studyMode = "TJ_EN",
+                    dailyGoal = 5,
+                    placementLevel = null,
+                    placementCeilingFreq = 100,
+                    placementBaselineWords = 0,
+                ),
+                favorites = emptyList(),
+                flashcards = emptyList(),
+                dailyLogs = listOf(DailyStatsEntity("2026-11-22", 6, 3, 80, 1, 120, 6)),
+            ),
+        )
+
+        val json = FavoritesBackup.encodeProfiles(
+            profiles = entries,
+            activeProfileId = "p_child1",
+            exportedAtMs = 1_731_000_200_000L,
+        )
+        val decoded = FavoritesBackup.decodeProfiles(json)
+        assertEquals(FavoritesBackup.PROFILE_BACKUP_FORMAT, decoded.format)
+        assertEquals(1, decoded.version)
+        assertEquals("p_child1", decoded.activeProfileId)
+        assertEquals(2, decoded.profiles.size)
+        assertEquals("Parent", decoded.profiles[0].profile.name)
+        assertEquals("A2", decoded.profiles[0].settings.placementLevel)
+        assertEquals(1, decoded.profiles[0].favorites.size)
+        assertEquals(1, decoded.profiles[0].flashcards.size)
+        assertEquals("Zarina", decoded.profiles[1].profile.name)
+        assertEquals(tj.tajikdictionary.domain.model.ProfileKind.CHILD, decoded.profiles[1].profile.kind)
+        assertEquals(5, decoded.profiles[1].settings.dailyGoal)
+    }
 }

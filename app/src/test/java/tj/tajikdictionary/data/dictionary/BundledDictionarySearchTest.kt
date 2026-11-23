@@ -2,14 +2,24 @@ package tj.tajikdictionary.data.dictionary
 
 import org.junit.AfterClass
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.BeforeClass
 import org.junit.Test
 import tj.tajikdictionary.core.text.TextNormalizer
+import tj.tajikdictionary.data.user.FavoriteEntity
+import tj.tajikdictionary.data.user.FlashcardEntity
+import tj.tajikdictionary.data.user.HistoryEntity
+import tj.tajikdictionary.data.user.UserDataRepository
+import tj.tajikdictionary.domain.model.AnswerCheckResult
+import tj.tajikdictionary.domain.model.ChallengeKind
 import tj.tajikdictionary.domain.model.DictionaryMode
 import tj.tajikdictionary.domain.model.Language
 import tj.tajikdictionary.domain.model.PartOfSpeech
 import tj.tajikdictionary.domain.model.SearchResult
+import tj.tajikdictionary.domain.model.WordCardCandidate
+import tj.tajikdictionary.domain.model.WordGameEngine
+import tj.tajikdictionary.domain.model.WordProgressSnapshot
 import java.io.File
 import java.sql.Connection
 import java.sql.DriverManager
@@ -116,5 +126,153 @@ class BundledDictionarySearchTest {
     @Test
     fun singleWordGetsNoPhraseFallback() {
         assertTrue(wordByWord("день", Language.RUSSIAN, DictionaryMode.TJ_RU).isEmpty())
+    }
+
+    @Test
+    fun bundledDatabaseHasZeroSovietTajikCharactersAndFixesKnownDefects() {
+        // 1. Zero pre-1998 Soviet Tajik letters (ц, щ, ы, ь) in Tajik headwords
+        conn.prepareStatement("SELECT headword FROM entries WHERE lang = 'tg'").use { st ->
+            st.executeQuery().use { rs ->
+                while (rs.next()) {
+                    val hw = rs.getString(1)
+                    assertFalse(
+                        "Soviet character found in Tajik headword: $hw",
+                        DictionaryRepository.containsSovietTajikChars(hw),
+                    )
+                }
+            }
+        }
+
+        // 2. Common school translations rank first (e.g. 'water' -> 'об', 'to conclude' -> 'бастан', 'happy' -> 'хушбахт')
+        val water = exact(listOf(TextNormalizer.searchKey("water")), setOf(Language.ENGLISH), DictionaryMode.TJ_EN, 3)
+        assertTrue(water.first { it.headword.lowercase() == "water" }.preview.startsWith("об"))
+
+        val conclude = exact(listOf(TextNormalizer.searchKey("to conclude")), setOf(Language.ENGLISH), DictionaryMode.TJ_EN, 3)
+        assertTrue(conclude.first { it.headword.lowercase() == "to conclude" }.preview.startsWith("бастан"))
+
+        val happy = exact(listOf(TextNormalizer.searchKey("happy")), setOf(Language.ENGLISH), DictionaryMode.TJ_EN, 3)
+        val happyHit = happy.first { it.headword.lowercase() == "happy" }
+        assertEquals(PartOfSpeech.ADJECTIVE, happyHit.pos)
+        assertTrue(happyHit.preview.startsWith("хушбахт"))
+    }
+
+    @Test
+    fun sovietTajikModernizerAndUserDataMergeHelpersWork() {
+        assertEquals("бисёр", DictionaryRepository.modernizeSovietTajik("бисьёр"))
+        assertEquals("тағйир", DictionaryRepository.modernizeSovietTajik("тағьир"))
+        assertEquals("коллексия", DictionaryRepository.modernizeSovietTajik("коллекция"))
+        assertEquals("револютсия", DictionaryRepository.modernizeSovietTajik("революция"))
+        assertEquals("литсей", DictionaryRepository.modernizeSovietTajik("лицей"))
+        assertEquals("январ", DictionaryRepository.modernizeSovietTajik("январь"))
+
+        // Verify modernized headwords exist in the bundled database
+        for (modern in listOf("бисёр", "тағйир", "коллексия", "револютсия", "литсей", "январ")) {
+            val hits = exact(listOf(TextNormalizer.searchKey(modern)), setOf(Language.TAJIK), DictionaryMode.TJ_RU, 3)
+            assertTrue("Missing modernized entry '$modern' in bundled DB", hits.any { it.headword.lowercase() == modern })
+        }
+
+        // Verify collision merging keeps earliest favorite, latest history, and highest flashcard progress
+        val fav1 = FavoriteEntity(10L, "tg", "бисёр", "много", addedAt = 1000L)
+        val fav2 = FavoriteEntity(10L, "tg", "бисёр", "много", addedAt = 2000L)
+        assertEquals(1000L, UserDataRepository.mergeFavorites(fav2, fav1).addedAt)
+
+        val hist1 = HistoryEntity(10L, "tg", "бисёр", "много", viewedAt = 1000L)
+        val hist2 = HistoryEntity(10L, "tg", "бисёр", "много", viewedAt = 3000L)
+        assertEquals(3000L, UserDataRepository.mergeHistory(hist1, hist2).viewedAt)
+
+        val cardLow = FlashcardEntity(10L, "tg", "бисёр", "много", repetitions = 1, intervalDays = 1, easeFactor = 2.5, nextReviewAt = 100L, masteryStage = 1, stabilityDays = 1.0)
+        val cardHigh = FlashcardEntity(10L, "tg", "бисёр", "много", repetitions = 4, intervalDays = 14, easeFactor = 2.6, nextReviewAt = 500L, masteryStage = 3, stabilityDays = 14.0)
+        val mergedCard = UserDataRepository.mergeFlashcards(cardLow, cardHigh)
+        assertEquals(3, mergedCard.masteryStage)
+        assertEquals(4, mergedCard.repetitions)
+        assertEquals(14.0, mergedCard.stabilityDays, 0.001)
+    }
+
+    @Test
+    fun learningCandidatesForIdsResolvesRussianEntriesToEnglishWhenStudyModeIsEnglish() {
+        // Find a Russian entry ("дом") and verify learningCandidatesForIdsSql returns its Tajik headword ("хона")
+        // paired with English translations when studyMode == TJ_EN (never Russian!).
+        val domHits = exact(listOf(TextNormalizer.searchKey("дом")), setOf(Language.RUSSIAN), DictionaryMode.TJ_RU, 3)
+        val domId = domHits.first { it.headword.lowercase() == "дом" }.id
+
+        val sql = DictionaryRepository.learningCandidatesForIdsSql(1, DictionaryMode.TJ_EN)
+        conn.prepareStatement(sql).use { st ->
+            st.setString(1, DictionaryMode.TJ_EN.partner.code)
+            st.setString(2, domId.toString())
+            st.executeQuery().use { rs ->
+                assertTrue(rs.next())
+                assertEquals(domId, rs.getLong(1))
+                assertEquals("tg", rs.getString(2))
+                assertEquals("хона", rs.getString(3))
+                val preview = rs.getString(7).orEmpty()
+                assertTrue("Expected English preview for 'дом' in TJ_EN mode, got: $preview", preview.contains("house"))
+            }
+        }
+    }
+
+    @Test
+    fun lingvistTargetLanguageTrainerGeneratesEnglishChallengesAndAcceptsSynonyms() {
+        val candidates = listOf(
+            WordCardCandidate(1L, Language.TAJIK, "хона", "house, home, room", PartOfSpeech.NOUN, 95, "home", "Ин хона калон аст.", "This house is big."),
+            WordCardCandidate(2L, Language.TAJIK, "рафтан", "to go, to leave", PartOfSpeech.VERB, 96, "verbs", "Ман ба мактаб меравам.", "I go to school."),
+            WordCardCandidate(3L, Language.TAJIK, "китоб", "book", PartOfSpeech.NOUN, 94, "education", null, null),
+            WordCardCandidate(4L, Language.TAJIK, "об", "water", PartOfSpeech.NOUN, 98, "food", null, null),
+            WordCardCandidate(5L, Language.TAJIK, "мактаб", "school", PartOfSpeech.NOUN, 92, "education", null, null),
+        )
+
+        val items = WordGameEngine.makeRoundItems(
+            selected = candidates.take(2),
+            allPool = candidates,
+            fallbackDistractors = listOf("салом", "дӯст"), // Cyrillic fallback must be ignored for English target!
+            progressById = mapOf(
+                2L to WordProgressSnapshot(entryId = 2L, masteryStage = 1, stabilityDays = 1.5, repetitions = 1, lastReviewedAtMs = 1000L, nextReviewAtMs = 2000L),
+            ),
+        )
+
+        val houseItem = items[0]
+        assertEquals(ChallengeKind.MULTIPLE_CHOICE, houseItem.challengeKind)
+        assertEquals("house", houseItem.targetAnswer)
+        assertEquals("house", houseItem.buildTarget)
+        assertTrue(houseItem.choices.contains("house"))
+        // None of the synonyms ("home", "room") or Cyrillic words may appear as distractors
+        assertFalse(houseItem.choices.contains("home"))
+        assertFalse(houseItem.choices.contains("room"))
+        assertTrue(houseItem.choices.all { it.all { ch -> ch.code < 0x0400 } })
+        assertEquals("This ____ is big.", houseItem.clozeSentence)
+        assertEquals("Ин хона калон аст.", houseItem.clozeTranslation)
+
+        val goItem = items[1]
+        assertEquals(ChallengeKind.WORD_BUILDER, goItem.challengeKind)
+        assertEquals("to go", goItem.targetAnswer)
+        assertEquals("go", goItem.buildTarget)
+        assertEquals(listOf("o", "g"), goItem.tiles)
+        assertEquals("I ____ to school.", goItem.clozeSentence)
+
+        // Synonym and bare-infinitive acceptance in checkTypedAnswer
+        assertEquals(
+            AnswerCheckResult.Exact,
+            WordGameEngine.checkTypedAnswer("house", houseItem.buildTarget, houseItem.acceptedAnswers),
+        )
+        assertEquals(
+            AnswerCheckResult.Exact,
+            WordGameEngine.checkTypedAnswer("home", houseItem.buildTarget, houseItem.acceptedAnswers),
+        )
+        assertEquals(
+            AnswerCheckResult.Exact,
+            WordGameEngine.checkTypedAnswer("go", goItem.buildTarget, goItem.acceptedAnswers),
+        )
+        assertEquals(
+            AnswerCheckResult.Exact,
+            WordGameEngine.checkTypedAnswer("to go", goItem.buildTarget, goItem.acceptedAnswers),
+        )
+        assertEquals(
+            AnswerCheckResult.Exact,
+            WordGameEngine.checkTypedAnswer("leave", goItem.buildTarget, goItem.acceptedAnswers),
+        )
+        // 1-letter typo near-miss on 5+ letter English word
+        assertEquals(
+            AnswerCheckResult.TajikLetterNearMiss("house"),
+            WordGameEngine.checkTypedAnswer("hause", houseItem.buildTarget, houseItem.acceptedAnswers),
+        )
     }
 }

@@ -31,10 +31,18 @@
 
 ## Phase 3.5 — Family Profiles & Sharing (see [`FAMILY_PROFILES_ROADMAP.md`](FAMILY_PROFILES_ROADMAP.md))
 - [x] Share cards for round results, placement level, streaks and achievements (iOS + Android) with app link + QR
-- [ ] Local multi-learner profiles on one device (one learning store per profile, no server), "Who's learning?" switcher
-- [ ] Kid mode + optional parent PIN, local family board, cross-platform profile backup file
+- [x] Local multi-learner profiles on one device (up to 3 profiles per phone, one learning store per profile, no server), "Who's learning?" switcher
+- [x] Kid mode (6-word rounds, choice & tiles only, ads disabled), local Family & Learners board on Learn page, cross-platform `ProfileBackup v1` + iCloud / Google Account Auto Backup
 - [x] First-launch onboarding; simpler Learn screen with a separate Progress screen
 - [ ] Daily reminder (local notifications), CI for both repos, GitHub Pages landing + privacy policy
+
+## Phase 3.6 — Monetization (ads + GDPR consent)
+- [x] Google UMP consent (GDPR/TCF) on launch, after onboarding; "Privacy settings" row in Settings where required
+- [x] Waterfall on every slot: Yandex Mobile Ads 8.7.0 first, Google Mobile Ads (iOS 13.13 / Android next-gen SDK 1.3.1) when Yandex has no fill
+- [x] Placements (same on both apps): pinned bottom banner on Dictionary / Learn / Saved / History (not Settings); separate banner unit on the word detail screen; interstitial at most every 3 finished game rounds and 3 min, only when leaving the game. No ads inside game rounds, flashcards, onboarding or the placement test
+- [x] Debug builds use Yandex demo + Google test units; release builds keep ads off until every ID is filled in (iOS `AdConfig.swift`, Android `Config/AdUnits.properties`)
+- [ ] Before release: real AdMob app IDs (iOS Info.plist `GADApplicationIdentifier`, Android manifest) + published GDPR message in AdMob, real Yandex and AdMob ad units, store privacy labels / Data safety form updated for advertising data
+- [x] Kid mode turns ads off while a child profile is active: COPPA, Google Play Families policy, App Store Kids category rules
 
 ## Phase 4 — Store Release & OTA Lexicon Updates
 - [ ] Over-the-air lightweight SQLite delta/manifest update check (keeping user data untouched in Room / SwiftData)

@@ -82,7 +82,7 @@ fun PlacementTestScreen(
     settings: SettingsRepository,
     onBack: () -> Unit,
 ) {
-    val mode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
+    val mode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_EN)
     val scope = rememberCoroutineScope()
 
     var isLoading by remember { mutableStateOf(true) }
@@ -127,7 +127,7 @@ fun PlacementTestScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.placement_title)) },
+                title = { StudyLanguageTitle(stringResource(R.string.placement_title), settings) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.Close, contentDescription = null)

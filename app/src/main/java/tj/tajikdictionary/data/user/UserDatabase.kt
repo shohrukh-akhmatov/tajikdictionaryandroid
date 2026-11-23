@@ -70,6 +70,12 @@ interface FavoritesDao {
     @Query("SELECT * FROM favorites ORDER BY addedAt DESC")
     fun observeAll(): Flow<List<FavoriteEntity>>
 
+    @Query("SELECT * FROM favorites")
+    suspend fun getAll(): List<FavoriteEntity>
+
+    @Query("SELECT * FROM favorites WHERE entryId = :entryId")
+    suspend fun get(entryId: Long): FavoriteEntity?
+
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE entryId = :entryId)")
     fun observeIsFavorite(entryId: Long): Flow<Boolean>
 
@@ -78,12 +84,21 @@ interface FavoritesDao {
 
     @Query("DELETE FROM favorites WHERE entryId = :entryId")
     suspend fun delete(entryId: Long)
+
+    @Query("DELETE FROM favorites")
+    suspend fun clearAll()
 }
 
 @Dao
 interface HistoryDao {
     @Query("SELECT * FROM history ORDER BY viewedAt DESC LIMIT :limit")
     fun observeRecent(limit: Int): Flow<List<HistoryEntity>>
+
+    @Query("SELECT * FROM history")
+    suspend fun getAll(): List<HistoryEntity>
+
+    @Query("SELECT * FROM history WHERE entryId = :entryId")
+    suspend fun get(entryId: Long): HistoryEntity?
 
     @Upsert
     suspend fun upsert(item: HistoryEntity)
@@ -108,6 +123,9 @@ interface FlashcardsDao {
     @Query("SELECT * FROM flashcards ORDER BY nextReviewAt ASC")
     fun observeAll(): Flow<List<FlashcardEntity>>
 
+    @Query("SELECT * FROM flashcards")
+    suspend fun getAll(): List<FlashcardEntity>
+
     @Query("SELECT * FROM flashcards WHERE entryId = :entryId")
     suspend fun get(entryId: Long): FlashcardEntity?
 
@@ -116,6 +134,12 @@ interface FlashcardsDao {
 
     @Upsert
     suspend fun upsert(item: FlashcardEntity)
+
+    @Query("DELETE FROM flashcards WHERE entryId = :entryId")
+    suspend fun delete(entryId: Long)
+
+    @Query("DELETE FROM flashcards")
+    suspend fun clearAll()
 }
 
 @Dao
@@ -123,11 +147,17 @@ interface DailyStatsDao {
     @Query("SELECT * FROM daily_stats ORDER BY dateKey DESC")
     fun observeAll(): Flow<List<DailyStatsEntity>>
 
+    @Query("SELECT * FROM daily_stats ORDER BY dateKey DESC")
+    suspend fun getAll(): List<DailyStatsEntity>
+
     @Query("SELECT * FROM daily_stats WHERE dateKey = :dateKey")
     suspend fun get(dateKey: String): DailyStatsEntity?
 
     @Upsert
     suspend fun upsert(item: DailyStatsEntity)
+
+    @Query("DELETE FROM daily_stats")
+    suspend fun clearAll()
 }
 
 @Database(
@@ -192,9 +222,21 @@ abstract class UserDatabase : RoomDatabase() {
             }
         }
 
-        fun create(context: Context): UserDatabase =
-            Room.databaseBuilder(context, UserDatabase::class.java, "user.db")
+        fun dbFileName(profileId: String): String {
+            if (profileId == "default" || profileId.isBlank()) return "user.db"
+            val safe = profileId.replace(Regex("[^A-Za-z0-9_-]"), "_")
+            return "learning_$safe.db"
+        }
+
+        fun create(context: Context, profileId: String = "default"): UserDatabase =
+            Room.databaseBuilder(context, UserDatabase::class.java, dbFileName(profileId))
                 .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
+
+        fun deleteForProfile(context: Context, profileId: String) {
+            if (profileId != "default" && profileId.isNotBlank()) {
+                context.deleteDatabase(dbFileName(profileId))
+            }
+        }
     }
 }

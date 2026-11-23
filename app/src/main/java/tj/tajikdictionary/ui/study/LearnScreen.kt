@@ -86,7 +86,14 @@ import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import tj.tajikdictionary.domain.model.GamificationSummary
+import tj.tajikdictionary.domain.model.LearnerProfile
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LearnScreen(
@@ -102,13 +109,35 @@ fun LearnScreen(
     val flashcards by userData.flashcards.collectAsStateWithLifecycle(initialValue = emptyList())
     val favorites by userData.favorites.collectAsStateWithLifecycle(initialValue = emptyList())
     val hasCompletedPlacement by settings.hasCompletedPlacement.collectAsStateWithLifecycle(initialValue = true)
+    val profiles by settings.profiles.collectAsStateWithLifecycle(initialValue = listOf(LearnerProfile.defaultProfile()))
+    val activeProfile by settings.activeProfile.collectAsStateWithLifecycle(initialValue = LearnerProfile.defaultProfile())
+    val profileStats by settings.profileStats.collectAsStateWithLifecycle(initialValue = emptyMap())
+    val askWhoIsLearning by settings.askWhoIsLearning.collectAsStateWithLifecycle(initialValue = true)
+    val lastProfileSwitchMs by settings.lastProfileSwitchMs.collectAsStateWithLifecycle(initialValue = System.currentTimeMillis())
+
     val topics by produceState<List<TopicCount>>(initialValue = emptyList(), dictionary) {
         value = dictionary.topics()
     }
     val summary = rememberGamificationSummary(dictionary, userData, settings)
     val levelTitle = levelTitle(summary.level)
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     var selectedSource by remember { mutableStateOf<GameDeckSource>(GameDeckSource.SmartMix) }
+    var showProfileSwitcher by rememberSaveable { mutableStateOf(false) }
+    var showAddProfileDialog by remember { mutableStateOf(false) }
+    var editingProfile by remember { mutableStateOf<LearnerProfile?>(null) }
+    var whoIsLearningChecked by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(profiles.size, askWhoIsLearning, lastProfileSwitchMs) {
+        if (!whoIsLearningChecked && profiles.size >= 2) {
+            whoIsLearningChecked = true
+            val elapsed = System.currentTimeMillis() - lastProfileSwitchMs
+            if (askWhoIsLearning && elapsed > LearnerProfile.WHO_IS_LEARNING_COOLDOWN_MS) {
+                showProfileSwitcher = true
+            }
+        }
+    }
 
     Scaffold(
         modifier = modifier,
@@ -119,6 +148,13 @@ fun LearnScreen(
                     containerColor = MaterialTheme.colorScheme.background,
                 ),
                 title = { Text(stringResource(R.string.tab_learn), fontWeight = FontWeight.Bold) },
+                actions = {
+                    ProfileHeaderChip(
+                        activeProfile = activeProfile,
+                        profileCount = profiles.size,
+                        onClick = { showProfileSwitcher = true },
+                    )
+                },
             )
         },
     ) { padding ->
@@ -342,7 +378,7 @@ fun LearnScreen(
                         Icon(Icons.Filled.PlayArrow, contentDescription = null)
                         Spacer(Modifier.size(6.dp))
                         Text(
-                            stringResource(R.string.game_start_round),
+                            stringResource(R.string.game_start_round_n, activeProfile.kind.roundSize),
                             style = MaterialTheme.typography.titleMedium,
                         )
                     }
@@ -360,6 +396,24 @@ fun LearnScreen(
                 }
             }
 
+            // Multi-user Family & Learners Board (or 1-tap invite when only 1 profile exists)
+            FamilyLearnersCard(
+                profiles = profiles,
+                activeProfile = activeProfile,
+                activeSummary = summary,
+                statsByProfile = profileStats,
+                onSelectProfile = { targetId ->
+                    scope.launch { settings.switchProfile(targetId) }
+                },
+                onOpenSwitcher = { showProfileSwitcher = true },
+                onAddProfile = {
+                    if (profiles.size < LearnerProfile.MAX_PROFILES) {
+                        showAddProfileDialog = true
+                    } else {
+                        showProfileSwitcher = true
+                    }
+                },
+            )
 
             // Shown until the placement test is taken once; afterwards it lives on the Progress screen.
             if (!hasCompletedPlacement) {
@@ -381,6 +435,81 @@ fun LearnScreen(
 
             Spacer(Modifier.height(16.dp))
         }
+    }
+
+    if (showProfileSwitcher) {
+        ProfileSwitcherSheet(
+            profiles = profiles,
+            activeProfile = activeProfile,
+            statsByProfile = profileStats,
+            onSelectProfile = { targetId ->
+                showProfileSwitcher = false
+                scope.launch { settings.switchProfile(targetId) }
+            },
+            onAddProfileClick = {
+                showProfileSwitcher = false
+                showAddProfileDialog = true
+            },
+            onEditProfileClick = { target ->
+                showProfileSwitcher = false
+                editingProfile = target
+            },
+            onDismiss = {
+                showProfileSwitcher = false
+                scope.launch { settings.recordProfileConfirmed() }
+            },
+        )
+    }
+
+    if (showAddProfileDialog) {
+        ProfileEditorDialog(
+            initialProfile = null,
+            existingCount = profiles.size,
+            canDelete = false,
+            onSave = { name, avatar, colorHex, kind ->
+                showAddProfileDialog = false
+                scope.launch {
+                    settings.addProfile(
+                        name = name,
+                        avatar = avatar,
+                        colorHex = colorHex,
+                        kind = kind,
+                        switchToNew = true,
+                    )
+                }
+            },
+            onDismiss = { showAddProfileDialog = false },
+        )
+    }
+
+    editingProfile?.let { target ->
+        ProfileEditorDialog(
+            initialProfile = target,
+            existingCount = profiles.size,
+            canDelete = profiles.size > 1,
+            onSave = { name, avatar, colorHex, kind ->
+                editingProfile = null
+                scope.launch {
+                    settings.updateProfile(
+                        id = target.id,
+                        name = name,
+                        avatar = avatar,
+                        colorHex = colorHex,
+                        kind = kind,
+                    )
+                }
+            },
+            onDelete = {
+                editingProfile = null
+                scope.launch {
+                    val deleted = settings.deleteProfile(target.id)
+                    if (deleted) {
+                        userData.deleteProfileData(context, target.id)
+                    }
+                }
+            },
+            onDismiss = { editingProfile = null },
+        )
     }
 }
 

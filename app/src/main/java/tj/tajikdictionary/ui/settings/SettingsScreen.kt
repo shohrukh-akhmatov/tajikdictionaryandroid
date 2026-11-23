@@ -15,9 +15,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Feedback
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Style
@@ -35,14 +37,17 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -66,9 +71,14 @@ import tj.tajikdictionary.data.user.FavoritesBackup
 import tj.tajikdictionary.data.user.UserDataRepository
 import tj.tajikdictionary.domain.model.DictionaryInfo
 import tj.tajikdictionary.domain.model.DictionaryMode
+import tj.tajikdictionary.domain.model.LearnerProfile
 import tj.tajikdictionary.ui.components.AppCard
 import tj.tajikdictionary.ui.components.ModeSwitcher
 import tj.tajikdictionary.ui.components.SectionHeader
+import tj.tajikdictionary.ui.study.ProfileAvatarCircle
+import tj.tajikdictionary.ui.study.ProfileEditorDialog
+import tj.tajikdictionary.ui.study.ProfileSwitcherSheet
+import tj.tajikdictionary.ui.study.localizedDisplayName
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,32 +98,28 @@ fun SettingsScreen(
     val dailyGoal by settings.dailyGoal.collectAsStateWithLifecycle(initialValue = 10)
     val placementLevel by settings.placementLevel.collectAsStateWithLifecycle(initialValue = null)
     val hasCompletedPlacement by settings.hasCompletedPlacement.collectAsStateWithLifecycle(initialValue = false)
+    val profiles by settings.profiles.collectAsStateWithLifecycle(initialValue = listOf(LearnerProfile.defaultProfile()))
+    val activeProfile by settings.activeProfile.collectAsStateWithLifecycle(initialValue = LearnerProfile.defaultProfile())
+    val profileStats by settings.profileStats.collectAsStateWithLifecycle(initialValue = emptyMap())
+    val askWhoIsLearning by settings.askWhoIsLearning.collectAsStateWithLifecycle(initialValue = true)
     val info by produceState<DictionaryInfo?>(initialValue = null, dictionary) {
         value = dictionary.info()
     }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    var showProfileSwitcher by remember { mutableStateOf(false) }
+    var showAddProfileDialog by remember { mutableStateOf(false) }
+    var editingProfile by remember { mutableStateOf<LearnerProfile?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json"),
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
+            val payload = userData.exportAllProfiles(settings)
             val favs = userData.favorites.first()
             val cards = userData.flashcards.first()
-            val logs = userData.dailyStats.first()
-            val placement = if (hasCompletedPlacement && placementLevel != null) {
-                val lvl = placementLevel!!
-                FavoritesBackup.PlacementBackup(
-                    cefrLevel = lvl.code,
-                    ceilingFreq = lvl.recommendedCeilingFrequency,
-                    baselineWords = lvl.baselineKnownWords,
-                )
-            } else {
-                null
-            }
-            val payload = FavoritesBackup.encodeFull(favs, cards, logs, placement)
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
                     context.contentResolver.openOutputStream(uri)?.use { out ->
@@ -140,13 +146,7 @@ fun SettingsScreen(
                     val json = context.contentResolver.openInputStream(uri)?.use { input ->
                         input.bufferedReader(Charsets.UTF_8).readText()
                     } ?: error("Empty file")
-                    FavoritesBackup.decodeFull(json)
-                }.mapCatching { decoded ->
-                    val written = userData.importFullBackup(decoded)
-                    decoded.placement?.let { p ->
-                        settings.applyPlacementBackup(p.cefrLevel, p.ceilingFreq, p.baselineWords)
-                    }
-                    written
+                    userData.importProfilesBackup(json, settings)
                 }.getOrNull()
             }
             val msg = if (count != null) {
@@ -267,6 +267,46 @@ fun SettingsScreen(
 
             SectionHeader(title = stringResource(R.string.settings_learning))
             AppCard {
+                ListItem(
+                    colors = transparentRow,
+                    modifier = Modifier.clickable { showProfileSwitcher = true },
+                    leadingContent = {
+                        ProfileAvatarCircle(
+                            avatar = activeProfile.avatar,
+                            colorHex = activeProfile.colorHex,
+                        )
+                    },
+                    headlineContent = { Text(activeProfile.localizedDisplayName(), fontWeight = FontWeight.SemiBold) },
+                    supportingContent = {
+                        Text(stringResource(R.string.profile_limit_badge, profiles.size, LearnerProfile.MAX_PROFILES))
+                    },
+                    trailingContent = {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+                    },
+                )
+                if (profiles.size >= 2) {
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                    ListItem(
+                        colors = transparentRow,
+                        leadingContent = { Icon(Icons.Filled.Group, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                        headlineContent = { Text(stringResource(R.string.profile_ask_on_learn)) },
+                        trailingContent = {
+                            Switch(
+                                checked = askWhoIsLearning,
+                                onCheckedChange = { checked -> scope.launch { settings.setAskWhoIsLearning(checked) } },
+                            )
+                        },
+                    )
+                }
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         stringResource(R.string.settings_daily_goal),
@@ -344,10 +384,21 @@ fun SettingsScreen(
             AppCard {
                 ListItem(
                     colors = transparentRow,
-                    modifier = Modifier.clickable { exportLauncher.launch("tajik-dictionary-favorites.json") },
+                    leadingContent = { Icon(Icons.Filled.CloudDone, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(stringResource(R.string.backup_cloud_status_title)) },
+                    supportingContent = { Text(stringResource(R.string.backup_cloud_status_sub, LearnerProfile.MAX_PROFILES)) },
+                )
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                ListItem(
+                    colors = transparentRow,
+                    modifier = Modifier.clickable { exportLauncher.launch("tajik-dictionary-profiles.json") },
                     leadingContent = { Icon(Icons.Filled.CloudUpload, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                    headlineContent = { Text(stringResource(R.string.backup_export_title)) },
-                    supportingContent = { Text(stringResource(R.string.backup_export_sub)) },
+                    headlineContent = { Text(stringResource(R.string.backup_export_profiles_title)) },
+                    supportingContent = { Text(stringResource(R.string.backup_export_profiles_sub)) },
                 )
                 HorizontalDivider(
                     thickness = 0.5.dp,
@@ -360,8 +411,8 @@ fun SettingsScreen(
                         importLauncher.launch(arrayOf("application/json", "text/*"))
                     },
                     leadingContent = { Icon(Icons.Filled.CloudDownload, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                    headlineContent = { Text(stringResource(R.string.backup_import_title)) },
-                    supportingContent = { Text(stringResource(R.string.backup_import_sub)) },
+                    headlineContent = { Text(stringResource(R.string.backup_import_profiles_title)) },
+                    supportingContent = { Text(stringResource(R.string.backup_import_profiles_sub)) },
                 )
             }
 
@@ -429,5 +480,77 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showProfileSwitcher) {
+        ProfileSwitcherSheet(
+            profiles = profiles,
+            activeProfile = activeProfile,
+            statsByProfile = profileStats,
+            onSelectProfile = { targetId ->
+                showProfileSwitcher = false
+                scope.launch { settings.switchProfile(targetId) }
+            },
+            onAddProfileClick = {
+                showProfileSwitcher = false
+                showAddProfileDialog = true
+            },
+            onEditProfileClick = { target ->
+                showProfileSwitcher = false
+                editingProfile = target
+            },
+            onDismiss = { showProfileSwitcher = false },
+        )
+    }
+
+    if (showAddProfileDialog) {
+        ProfileEditorDialog(
+            initialProfile = null,
+            existingCount = profiles.size,
+            canDelete = false,
+            onSave = { name, avatar, colorHex, kind ->
+                showAddProfileDialog = false
+                scope.launch {
+                    settings.addProfile(
+                        name = name,
+                        avatar = avatar,
+                        colorHex = colorHex,
+                        kind = kind,
+                        switchToNew = true,
+                    )
+                }
+            },
+            onDismiss = { showAddProfileDialog = false },
+        )
+    }
+
+    editingProfile?.let { target ->
+        ProfileEditorDialog(
+            initialProfile = target,
+            existingCount = profiles.size,
+            canDelete = profiles.size > 1,
+            onSave = { name, avatar, colorHex, kind ->
+                editingProfile = null
+                scope.launch {
+                    settings.updateProfile(
+                        id = target.id,
+                        name = name,
+                        avatar = avatar,
+                        colorHex = colorHex,
+                        kind = kind,
+                    )
+                }
+            },
+            onDelete = {
+                editingProfile = null
+                scope.launch {
+                    val deleted = settings.deleteProfile(target.id)
+                    if (deleted) {
+                        userData.deleteProfileData(context, target.id)
+                    }
+                }
+            },
+            onDismiss = { editingProfile = null },
+        )
     }
 }

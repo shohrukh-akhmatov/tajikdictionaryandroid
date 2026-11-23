@@ -465,6 +465,46 @@ class DictionaryRepository(
         DictionaryInfo(meta["data_version"].orEmpty(), meta["stats"].orEmpty())
     }
 
+    /**
+     * Resolves the current entry ID for `(lang, headword)` after a `dictionary.sqlite` update.
+     * Lookup order:
+     *  1. Exact case-insensitive `(lang, headword)` match (highest frequency first).
+     *  2. Normalized `(lang, search_key)` match.
+     *  3. Modern post-1998 Tajik orthography fallback for pre-1998 Soviet Tajik headwords (`ц, щ, ы, ь`).
+     */
+    suspend fun resolveEntryId(lang: String, headword: String): Long? = withContext(io) {
+        val trimmed = headword.trim()
+        if (trimmed.isEmpty()) return@withContext null
+
+        queryIdByHeadwordOrKey(lang, trimmed)?.let { return@withContext it }
+
+        if (lang == Language.TAJIK.code && containsSovietTajikChars(trimmed)) {
+            val modernized = modernizeSovietTajik(trimmed)
+            if (modernized.isNotEmpty() && !modernized.equals(trimmed, ignoreCase = true)) {
+                queryIdByHeadwordOrKey(lang, modernized)?.let { return@withContext it }
+            }
+        }
+        null
+    }
+
+    private fun queryIdByHeadwordOrKey(lang: String, headword: String): Long? {
+        db.get().rawQuery(
+            "SELECT id FROM entries WHERE lang = ? AND LOWER(headword) = LOWER(?) ORDER BY frequency DESC, id ASC LIMIT 1",
+            arrayOf(lang, headword),
+        ).use { c ->
+            if (c.moveToFirst()) return c.getLong(0)
+        }
+        val key = TextNormalizer.searchKey(headword)
+        if (key.isEmpty()) return null
+        db.get().rawQuery(
+            "SELECT id FROM entries WHERE lang = ? AND search_key = ? ORDER BY frequency DESC, id ASC LIMIT 1",
+            arrayOf(lang, key),
+        ).use { c ->
+            if (c.moveToFirst()) return c.getLong(0)
+        }
+        return null
+    }
+
     /** Returns frequency-ordered Tajik candidates (plus optional cloze example) for the word-teaching game. */
     suspend fun learningCandidates(
         topic: String? = null,
@@ -481,7 +521,7 @@ class DictionaryRepository(
                    (SELECT ex.tg FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_tg,
                    (SELECT $partnerCol FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_partner
             FROM entries e
-            WHERE e.lang = 'tg' $topicClause $freqClause
+            WHERE e.lang = 'tg' AND e.frequency >= 40 $topicClause $freqClause
             ORDER BY e.frequency DESC, e.id ASC
             LIMIT ?
         """.trimIndent()
@@ -575,17 +615,7 @@ class DictionaryRepository(
         mode: DictionaryMode,
     ): List<WordCardCandidate> = withContext(io) {
         if (entryIds.isEmpty()) return@withContext emptyList()
-        val partnerCol = if (mode.partner == Language.RUSSIAN) "ex.ru" else "ex.en"
-        val placeholders = entryIds.joinToString(",") { "?" }
-        val sql = """
-            SELECT e.id, e.lang, e.headword, e.pos, e.frequency, e.topic,
-                   ${previewColumn("e", 4)} AS preview,
-                   (SELECT ex.tg FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_tg,
-                   (SELECT $partnerCol FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_partner
-            FROM entries e
-            WHERE e.id IN ($placeholders)
-            ORDER BY e.frequency DESC, e.id ASC
-        """.trimIndent()
+        val sql = learningCandidatesForIdsSql(entryIds.size, mode)
         val args = buildList {
             add(mode.partner.code)
             entryIds.forEach { add(it.toString()) }
@@ -604,7 +634,7 @@ class DictionaryRepository(
                     exampleTg = stringOrNull(7),
                     examplePartner = stringOrNull(8),
                 )
-            }
+            }.filter { it.preview.isNotBlank() }
         }
     }
 
@@ -616,6 +646,99 @@ class DictionaryRepository(
     }
 
     companion object {
+        private val SOVIET_TAJIK_RE = Regex("[цщыьЦЩЫЬ]")
+        private val ARABIC_SOFT_SIGN_RE = Regex("([ғқҳҷзбдтсшрлнмвфкпг])ь([ие])", RegexOption.IGNORE_CASE)
+        private val TSIYA_RE = Regex("(.)(ция\\w*|цион\\w*)", RegexOption.IGNORE_CASE)
+        private val TAJIK_VOWELS = setOf('а', 'о', 'у', 'э', 'и', 'і', 'ї', 'е', 'ё', 'ю', 'я', 'ӯ')
+        private val EXPLICIT_MODERN_TAJIK = mapOf(
+            "лыжа" to "лижа",
+            "лыжатозӣ" to "лижатозӣ",
+            "циркуль" to "паргор",
+            "цирк" to "сирк",
+            "цикл" to "сикл",
+            "цистерна" to "систерна",
+            "цитата" to "иқтибос",
+            "цемент" to "семент",
+            "цементӣ" to "сементӣ",
+            "цех" to "сех",
+            "центр" to "марказ",
+            "концерт" to "консерт",
+            "концертӣ" to "консертӣ",
+            "концерн" to "консерн",
+            "канцелярия" to "канселярия",
+            "канцеляриявӣ" to "канселяриявӣ",
+            "канцелярӣ" to "канселярӣ",
+            "рецензия" to "тақриз",
+            "офицер" to "афсар",
+            "принцип" to "принсип",
+            "медицина" to "тиб",
+            "медицинӣ" to "тиббӣ",
+            "дисциплина" to "интизом",
+            "лицей" to "литсей",
+            "социалист" to "сотсиалист",
+            "социалистӣ" to "сотсиалистӣ",
+            "социалӣ" to "сотсиалӣ",
+            "нацист" to "натсист",
+            "нацистӣ" to "натсистӣ",
+            "публицист" to "публитсист",
+            "публицистӣ" to "публитсистӣ",
+            "процент" to "фоиз",
+            "доцент" to "дотсент",
+            "акцент" to "аксент",
+            "абзац" to "абзатс",
+            "лоцман" to "лотсман",
+            "швейцариягӣ" to "швейтсариягӣ",
+            "швейцарӣ" to "швейтсарӣ",
+            "французӣ" to "фаронсавӣ",
+            "интернационал" to "интернатсионал",
+            "интернационалӣ" to "интернатсионалӣ",
+            "энциклопедия" to "энсиклопедия",
+            "энциклопедӣ" to "энсиклопедӣ",
+            "ассоциация" to "ассотсиатсия",
+            "концентрация" to "консентратсия",
+            "концентрационӣ" to "консентратсионӣ",
+            "концентрат" to "консентрат",
+            "милиционер" to "милитсионер",
+            "революционер" to "револютсионер",
+            "пьеса" to "песа",
+            "эскадрилья" to "эскадриля",
+            "батальон" to "баталон",
+            "интервью" to "интервю",
+            "судья" to "судя",
+            "фильм" to "филм",
+            "кинофильм" to "кинофилм",
+            "роль" to "рол",
+            "руль" to "рул",
+            "гриль" to "грил",
+            "пальто" to "палто",
+            "тюрьма" to "маҳбас",
+            "мадьюнӣ" to "мадюнӣ",
+        )
+
+        internal fun containsSovietTajikChars(text: String): Boolean = SOVIET_TAJIK_RE.containsMatchIn(text)
+
+        /** Converts pre-1998 Soviet Tajik orthography (`бисьёр`, `тағьир`, `коллекция`, `революция`) to modern Tajik. */
+        internal fun modernizeSovietTajik(raw: String): String {
+            val w0 = raw.trim()
+            EXPLICIT_MODERN_TAJIK[w0.lowercase()]?.let { return it }
+            var w = ARABIC_SOFT_SIGN_RE.replace(w0) { m -> "${m.groupValues[1]}й${m.groupValues[2]}" }
+            w = w.replace("ь", "").replace("Ь", "")
+            w = TSIYA_RE.replace(w) { m ->
+                val prev = m.groupValues[1]
+                val suf = m.groupValues[2]
+                val isTsiya = suf.lowercase().startsWith("ция")
+                val stem = if (prev.lowercase().firstOrNull() in TAJIK_VOWELS) {
+                    if (isTsiya) "тсия" else "тсион"
+                } else {
+                    if (isTsiya) "сия" else "сион"
+                }
+                prev + stem + suf.drop(4)
+            }
+            w = w.replace("ц", "тс").replace("Ц", "Тс")
+                .replace("щ", "ш").replace("Щ", "Ш")
+                .replace("ы", "и").replace("Ы", "И")
+            return w
+        }
         /**
          * Word-by-word phrase fallback: each word of a multi-word [key] (up to 8, length >= 2, in query
          * order) is looked up as an exact search key (3 hits), then by its stems (2), then - for words
@@ -691,6 +814,29 @@ class DictionaryRepository(
          * - Translations with the same spelling (homograph targets like two "ташаккур" entries) are
          *   collapsed so previews never read "ташаккур, раҳмат, ташаккур". Same SQL as iOS `previewColumn`.
          */
+        internal fun learningCandidatesForIdsSql(idCount: Int, mode: DictionaryMode): String {
+            val partnerCol = if (mode.partner == Language.RUSSIAN) "ex.ru" else "ex.en"
+            val placeholders = List(idCount) { "?" }.joinToString(",")
+            return """
+                SELECT req.id, e.lang, e.headword, e.pos, e.frequency, e.topic,
+                       ${previewColumn("e", 4, fixedPartner = true)} AS preview,
+                       (SELECT ex.tg FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_tg,
+                       (SELECT $partnerCol FROM examples ex WHERE ex.entry_id = e.id LIMIT 1) AS ex_partner
+                FROM entries req
+                JOIN entries e ON e.id = CASE
+                    WHEN req.lang = 'tg' THEN req.id
+                    ELSE (
+                        SELECT t.to_id FROM translations t
+                        JOIN entries pe ON pe.id = t.to_id
+                        WHERE t.from_id = req.id AND pe.lang = 'tg'
+                        ORDER BY t.position ASC LIMIT 1
+                    )
+                END
+                WHERE req.id IN ($placeholders)
+                ORDER BY e.frequency DESC, req.id ASC
+            """.trimIndent()
+        }
+
         internal fun previewColumn(alias: String, limit: Int, fixedPartner: Boolean = false): String {
             val langCondition = if (fixedPartner) "?" else "CASE WHEN $alias.lang = 'tg' THEN ? ELSE 'tg' END"
             return """

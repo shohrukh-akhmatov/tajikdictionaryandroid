@@ -32,7 +32,7 @@ class EntryDetailViewModel(
     private val entryId: Long,
     private val dictionary: DictionaryRepository,
     private val userData: UserDataRepository,
-    settings: SettingsRepository,
+    private val settings: SettingsRepository,
 ) : ViewModel() {
 
     private val loaded = MutableStateFlow<Pair<EntryDetail?, Boolean>>(null to true)
@@ -88,11 +88,12 @@ class EntryDetailViewModel(
         val state = uiState.value
         val detail = state.detail ?: return
         viewModelScope.launch {
+            val studyMode = settings.studyMode.first()
             userData.queueWordForPractice(
                 entryId = detail.entry.id,
                 language = detail.entry.language,
                 headword = detail.entry.headword,
-                preview = previewFor(detail, state.mode),
+                preview = previewFor(detail, studyMode).ifBlank { previewFor(detail, state.mode) },
             )
         }
     }
@@ -101,11 +102,12 @@ class EntryDetailViewModel(
         val state = uiState.value
         val detail = state.detail ?: return
         viewModelScope.launch {
+            val studyMode = settings.studyMode.first()
             userData.markEntryKnown(
                 entryId = detail.entry.id,
                 language = detail.entry.language,
                 headword = detail.entry.headword,
-                preview = previewFor(detail, state.mode),
+                preview = previewFor(detail, studyMode).ifBlank { previewFor(detail, state.mode) },
             )
         }
     }

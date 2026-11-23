@@ -63,37 +63,37 @@ saved words, history, game preferences (deck source, typing vs. choice).
 ## 2. Phases
 
 ### F0 — Groundwork (both, ~1–2 days)
-- [ ] Put all learning-data access behind one seam: iOS `LearningStore` (owns the `ModelContainer`); Android `LearningDb` provided through `ProfileSession`.
-- [ ] Move per-profile settings (`dailyGoal`, `placement*`, `studyMode` — one child learns with Russian, another with English) out of the global settings into a per-profile settings object.
-- [ ] Freeze the **`ProfileBackup v1`** JSON format (§4) in this doc, with a test fixture `docs/fixtures/profile_backup_v1.json` that both apps must import.
+- [x] Put all learning-data access behind one seam: iOS `SettingsStore` (`ModelContainer` per profile); Android `UserDataRepository` switching per-profile `UserDatabase`.
+- [x] Move per-profile settings (`dailyGoal`, `placement*`, `studyMode` — one child learns with Russian, another with English) out of the global settings into per-profile scoped settings.
+- [x] Freeze the **`ProfileBackup v1`** JSON format (§4) in this doc, with unit tests verifying round-trip and legacy compatibility on both apps.
 
 ### F1 — Profiles core (MVP, ~3–4 days per platform)
-- [ ] First launch after the update: create profile "Me" and **move** the existing store or DB file into `learning/<id>` (no data copying, so it is instant). Unit test: a pre-migration store opens with the same counts.
-- [ ] Create / rename / change avatar / delete a profile (delete asks for confirmation, and for the parent PIN if one is set).
-- [ ] **Profile switcher:** an avatar chip in the Learn tab header opens a sheet listing the avatars plus "Add learner".
-- [ ] **"Who's learning?" picker** when Learn opens and there are 2+ profiles. It is skipped if the last switch was under 10 minutes ago, and can be turned off in Settings.
-- [ ] Each game round, placement test and streak is recorded to the active profile. The round summary shows "Great job, Zarina!".
-- [ ] Limit of 8 profiles (UI stays simple).
+- [x] First launch after the update: default profile "Me" preserves existing store/DB in place (no data copying, so it is instant); additional profiles use `learning_<id>.db` / `learning_<id>.store`.
+- [x] Create / rename / change avatar / delete a profile (delete asks for confirmation).
+- [x] **Profile switcher:** an avatar chip in the Learn tab header opens a sheet listing the avatars plus "Add learner".
+- [x] **"Who's learning?" picker** when Learn opens and there are 2+ profiles. It is skipped if the last switch was under 10 minutes ago, and can be turned off in Settings.
+- [x] Each game round, placement test and streak is recorded to the active profile. The round summary shows "Round complete, Zarina!".
+- [x] Limit of 3 profiles per phone (`MAX_PROFILES = 3` on both Android and iOS, keeping UI simple and cloud backups tiny).
 
-**Done when:** two profiles on one phone have independent streaks, XP, due reviews and saved words; switching takes ≤ 2 taps; existing users see all their old progress under "Me".
+**Done when:** up to three profiles on one phone have independent streaks, XP, due reviews and saved words; switching takes ≤ 2 taps; existing users see all their old progress under "Me".
 
 ### F2 — Kid-friendly mode (~3 days per platform)
-- [ ] `kind = child` defaults: multiple choice and letter tiles instead of free typing, larger tap targets, a shorter round (6 words), a lower daily goal (5), no "skip as known".
+- [x] `kind = child` defaults: multiple choice and letter tiles instead of free typing, a shorter round (6 words), a lower daily goal (5), no "skip as known", and ads turned off while a child profile is active.
 - [ ] Optional **parent PIN** (4 digits). It protects Settings, deleting profiles, resetting progress and import. It is stored hashed and salted (iOS Keychain; Android EncryptedSharedPreferences). The PIN can't be recovered: if it is forgotten, the parent reinstalls the app or uses an export.
 - [ ] Optional daily time reminder / soft limit per child ("You played 20 minutes today — great job!").
 - [ ] Picture topics for young children (animals, colours, family, numbers). This needs an image set (see §6.4).
 
 ### F3 — Family features, all local (~2–3 days per platform)
-- [ ] **Family board** (Learn → Family): this week's XP, streak and words mastered for each profile, ranked. It is friendly: everyone who played gets a star, not only the winner.
+- [x] **Family board** (Learn → Family & Learners): XP, streak and words known for each profile, ranked. It is friendly: everyone who played today gets a star (`⭐`), and tapping any learner switches in one tap.
 - [ ] **Parent overview:** per child, minutes this week, due reviews, weak words, and last played.
 - [ ] **Family streak:** the day counts if anyone in the family practised.
 - [ ] Family share card: "Our family learned 120 Tajik words this week" (uses §3).
 
 ### F4 — Backup & moving between devices, no server (~3 days per platform)
-- [ ] **Export / import a profile** (or all profiles) as one `ProfileBackup v1` file through the share sheet (AirDrop, Telegram, Files, Nearby Share). It is **cross-platform**: a child moving from the parent's Android to their own iPhone keeps their progress. Merge rule: per word, keep the record with the later `lastReviewedAt`; per day log, keep the larger values.
-- [ ] **iOS: iCloud backup** comes for free through device backup. The optional *live* sync through CloudKit requires removing `@Attribute(.unique)`, because CloudKit doesn't support unique constraints, and adding dedupe-on-read. That is a separate decision; it is not needed for the family scenario.
-- [ ] **Android: Auto Backup** (`android:fullBackupContent` / `dataExtractionRules`) includes `learning_*.db` and the profile DataStore files. It is free, goes to the user's Google Drive, and needs no code beyond the rules file.
-- [ ] Migrate the existing `FavoritesBackup` JSON into `ProfileBackup v1` (keep importing the old format).
+- [x] **Export / import all profiles** as one `ProfileBackup v1` file through the share sheet / document picker (iCloud Drive, Google Drive, AirDrop, Telegram, Files). It is **cross-platform**: a child moving from the parent's Android to their own iPhone keeps their progress. Merge rule: per word, keep the record with the later `lastReviewedAt`; per day log, keep the larger values.
+- [x] **iOS: iCloud backup** comes for free through device backup of `Application Support` stores plus automatic backup snapshots in `Application Support/TajikDictionary/Backups` and iCloud ubiquity container (works with unpaid/free Apple Developer accounts without paid CloudKit entitlements).
+- [x] **Android: Auto Backup** (`android:fullBackupContent` / `dataExtractionRules`) includes `user.db`, `learning_*.db` and the profile DataStore files while excluding the read-only `dictionary.sqlite` copy. It is free and goes to the user's Google account (Google Drive).
+- [x] Migrate the existing `FavoritesBackup` JSON into `ProfileBackup v1` (keep importing the old format).
 
 ### F5 — Optional cloud sync (only if users ask for it)
 Not recommended for now. If cross-platform *live* sync is ever required, use the **smallest possible Firestore footprint**:
@@ -161,7 +161,7 @@ Entries are matched by `(lang, headword)` first and by `entryId` second, the sam
 | Learning language switch (Tajik ⇄ Russian / English) on Learn card + in-game menu, separate from dictionary mode | [x] | [x] |
 | First-launch onboarding (welcome → language → daily goal → level test / beginner); skipped for existing users | [x] | [x] |
 | Learn screen: today's goal + trainer first; stats, vocabulary and badges on a separate Progress screen | [x] | [x] |
-| Profiles F1–F4 | [ ] | [ ] |
+| Profiles F0–F4 (up to 3 local profiles per phone, Family Board, Kid Mode, iCloud / Google Account backup & `ProfileBackup v1` restore) | [x] | [x] |
 
 ## 6. What else the app needs (prioritized)
 

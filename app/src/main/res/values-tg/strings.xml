@@ -325,4 +325,44 @@
     <!-- Ads and GDPR consent (iOS StickyBannerView, Settings privacy row) -->
     <string name="ad_label">Реклама</string>
     <string name="settings_privacy">Танзимоти махфият</string>
+
+    <!-- Multi-user learner profiles, Family Board & Cloud Restore -->
+    <string name="profile_default_name">Ман</string>
+    <string name="profile_who_is_learning">Кӣ меомӯзад?</string>
+    <string name="profile_who_is_learning_sub">Профилро интихоб кунед: ҳар кас пешрафт ва калимаҳои худро дорад.</string>
+    <string name="profile_switch">Ивази омӯзанда</string>
+    <string name="profile_add_learner">Иловаи омӯзанда</string>
+    <string name="profile_edit_learner">Таҳрири профил</string>
+    <string name="profile_name_label">Номи омӯзанда</string>
+    <string name="profile_name_placeholder">мас. Зарина</string>
+    <string name="profile_avatar_label">Аватар</string>
+    <string name="profile_color_label">Ранг</string>
+    <string name="profile_kind_label">Намуди профил</string>
+    <string name="profile_kind_adult">Муқаррарӣ</string>
+    <string name="profile_kind_adult_sub">Даврҳои 10-калимагӣ · чоп ва кортҳо</string>
+    <string name="profile_kind_child">Реҷаи кӯдакона</string>
+    <string name="profile_kind_child_sub">Даврҳои 6-калимагӣ · бе клавиатура ва реклама</string>
+    <string name="profile_save">Захира кардан</string>
+    <string name="profile_delete">Ҳазфи профил</string>
+    <string name="profile_delete_confirm_title">Профили «%1$s» ҳазф шавад?</string>
+    <string name="profile_delete_confirm_msg">Ҳамаи пешрафт ва калимаҳои захирашудаи «%1$s» аз ин дастгоҳ пок мешаванд.</string>
+    <string name="profile_limit_badge">%1$d / %2$d профил</string>
+    <string name="profile_limit_reached">Ҳадди аксар %1$d профил дар як телефон пур шуд.</string>
+    <string name="profile_cloud_note">Профилҳо дар дастгоҳ нигоҳ дошта шуда, бо ҳисоби Google худкор нусхабардорӣ мешаванд.</string>
+    <string name="family_board_title">Оила ва омӯзандагон</string>
+    <string name="family_board_subtitle">Барои гузаштан ба профил пахш кунед</string>
+    <string name="family_invite_title">Бо оила меомӯзед?</string>
+    <string name="family_invite_sub">То %1$d профил дар як телефон илова кунед — ҳар кас бо сатҳ ва калимаҳои худ.</string>
+    <string name="family_active_badge">Фаъол</string>
+    <string name="family_practiced_today">Имрӯз машқ кард</string>
+    <string name="family_stat_summary">%1$d XP · %2$d калима</string>
+    <string name="profile_ask_on_learn">Пурсиши «Кӣ меомӯзад?» дар саҳифаи Омӯзиш</string>
+    <string name="profile_round_complete_named">Офарин, %1$s! Давр анҷом ёфт!</string>
+    <string name="game_start_round_n">Оғози даври %1$d-калимагӣ</string>
+    <string name="backup_cloud_status_title">Нусхабардории худкор ба Google</string>
+    <string name="backup_cloud_status_sub">То %1$d профили маҳаллӣ худкор нусхабардорӣ мешаванд ва ба Google Drive содир мешаванд</string>
+    <string name="backup_export_profiles_title">Содироти ҳамаи профилҳо (Google Drive / JSON)</string>
+    <string name="backup_export_profiles_sub">Захираи ҳамаи профилҳо, пешрафт ва калимаҳо ба файл</string>
+    <string name="backup_import_profiles_title">Барқарорсозии профилҳо аз нусха (JSON)</string>
+    <string name="backup_import_profiles_sub">Барқарорсозӣ аз Google Drive, iCloud ё телефони дигар</string>
 </resources>

@@ -107,7 +107,7 @@ fun StudyLanguagePicker(settings: SettingsRepository, modifier: Modifier = Modif
  */
 @Composable
 fun StudyLanguageTitle(title: String, settings: SettingsRepository) {
-    val studyMode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
+    val studyMode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_EN)
     val scope = rememberCoroutineScope()
     var expanded by remember { mutableStateOf(false) }
     val a11y = "$title, ${stringResource(R.string.study_language)}: ${partnerName(studyMode)}"

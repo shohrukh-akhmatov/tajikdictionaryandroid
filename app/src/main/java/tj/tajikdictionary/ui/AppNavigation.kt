@@ -64,6 +64,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import tj.tajikdictionary.AppContainer
 import tj.tajikdictionary.R
+import tj.tajikdictionary.domain.model.LearnerProfile
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import tj.tajikdictionary.ui.components.KeyboardDismissRoot
 import tj.tajikdictionary.ui.detail.EntryDetailScreen
 import tj.tajikdictionary.ui.detail.EntryDetailViewModel
@@ -160,10 +162,11 @@ fun TajikDictionaryRoot(
         }
         activity?.let { AdsManager.start(it) }
     }
-    // A pinned banner on every screen except Settings; the word detail screen has its own ad unit.
+    val activeProfile by container.settings.activeProfile.collectAsStateWithLifecycle(initialValue = LearnerProfile.defaultProfile())
+    // A pinned banner on every screen except Settings (and off for child profiles); the word detail screen has its own ad unit.
     // Hidden while the keyboard is up, so it never sits between the text field and the keys.
     val bannerPlacement = when {
-        currentRoute == null || showOnboarding || currentRoute == TopTab.SETTINGS.route -> null
+        currentRoute == null || showOnboarding || currentRoute == TopTab.SETTINGS.route || activeProfile.isChild -> null
         currentRoute.startsWith("entry/") -> AdPlacement.ENTRY_BANNER
         else -> AdPlacement.BANNER
     }
@@ -383,7 +386,9 @@ fun TajikDictionaryRoot(
             }
             composable("vocabulary") {
                 VocabularyListScreen(
+                    dictionary = container.dictionary,
                     userData = container.userData,
+                    settings = container.settings,
                     onBack = { navController.popBackStack() },
                     onEntryClick = openEntry,
                     onDrillWeak = { navController.navigate("game?source=weak") },

@@ -103,7 +103,7 @@ fun StudyScreen(
     initialTopic: String? = null,
     onBack: () -> Unit,
 ) {
-    val mode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
+    val mode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_EN)
     val favorites by userData.favorites.collectAsStateWithLifecycle(initialValue = emptyList())
     val progress by userData.flashcards.collectAsStateWithLifecycle(initialValue = emptyList())
     val topics by produceState<List<TopicCount>>(initialValue = emptyList(), dictionary) {
@@ -122,9 +122,24 @@ fun StudyScreen(
         val now = System.currentTimeMillis()
         val dueMap = progress.associateBy { it.entryId }
         val raw = if (selectedTopic == null) {
-            favorites.map { StudyCard(it.entryId, Language.fromCode(it.lang), it.headword, it.preview) }
+            val resolvedById = dictionary.learningCandidatesForIds(favorites.map { it.entryId }, mode)
+                .associateBy { it.entryId }
+            favorites.mapNotNull { fav ->
+                val cand = resolvedById[fav.entryId]
+                if (cand != null && cand.preview.isNotBlank()) {
+                    StudyCard(cand.entryId, cand.language, cand.headword, cand.preview)
+                } else {
+                    val freshPreview = dictionary.preview(fav.entryId, mode).ifBlank { fav.preview }
+                    if (freshPreview.isNotBlank()) {
+                        StudyCard(fav.entryId, Language.fromCode(fav.lang), fav.headword, freshPreview)
+                    } else {
+                        null
+                    }
+                }
+            }
         } else {
             dictionary.entriesByTopic(selectedTopic!!, mode)
+                .filter { it.preview.isNotBlank() }
                 .map { StudyCard(it.id, it.language, it.headword, it.preview) }
         }
         // Prioritize cards that are due or never studied yet.
@@ -139,6 +154,9 @@ fun StudyScreen(
         cardPresentedAtMs = System.currentTimeMillis()
     }
 
+    val deckTitle = selectedTopic?.let { stringResource(R.string.study_topic_title, localizedTopicName(it)) }
+        ?: stringResource(R.string.study_flashcards)
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -147,10 +165,7 @@ fun StudyScreen(
                     containerColor = MaterialTheme.colorScheme.background,
                 ),
                 title = {
-                    Text(
-                        selectedTopic?.let { stringResource(R.string.study_topic_title, localizedTopicName(it)) }
-                            ?: stringResource(R.string.study_flashcards),
-                    )
+                    StudyLanguageTitle(deckTitle, settings)
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

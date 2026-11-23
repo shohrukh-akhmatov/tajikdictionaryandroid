@@ -325,4 +325,44 @@
     <!-- Ads and GDPR consent (iOS StickyBannerView, Settings privacy row) -->
     <string name="ad_label">Advertisement</string>
     <string name="settings_privacy">Privacy settings</string>
+
+    <!-- Multi-user learner profiles, Family Board & Cloud Restore -->
+    <string name="profile_default_name">Me</string>
+    <string name="profile_who_is_learning">Who\'s learning?</string>
+    <string name="profile_who_is_learning_sub">Tap a profile to switch streaks, progress and saved words.</string>
+    <string name="profile_switch">Switch learner</string>
+    <string name="profile_add_learner">Add learner</string>
+    <string name="profile_edit_learner">Edit profile</string>
+    <string name="profile_name_label">Learner name</string>
+    <string name="profile_name_placeholder">e.g. Zarina</string>
+    <string name="profile_avatar_label">Avatar</string>
+    <string name="profile_color_label">Color</string>
+    <string name="profile_kind_label">Profile type</string>
+    <string name="profile_kind_adult">Standard</string>
+    <string name="profile_kind_adult_sub">10-word rounds · typing &amp; tiles</string>
+    <string name="profile_kind_child">Kid mode</string>
+    <string name="profile_kind_child_sub">6-word rounds · choice &amp; tiles only · no ads</string>
+    <string name="profile_save">Save</string>
+    <string name="profile_delete">Delete profile</string>
+    <string name="profile_delete_confirm_title">Delete %1$s?</string>
+    <string name="profile_delete_confirm_msg">This removes all learning progress and saved words for %1$s on this device.</string>
+    <string name="profile_limit_badge">%1$d / %2$d profiles</string>
+    <string name="profile_limit_reached">Limit of %1$d profiles per phone reached.</string>
+    <string name="profile_cloud_note">Local profiles are automatically backed up with your Google account and can be exported anytime.</string>
+    <string name="family_board_title">Family &amp; Learners</string>
+    <string name="family_board_subtitle">Tap any learner to switch in one tap</string>
+    <string name="family_invite_title">Learning with family?</string>
+    <string name="family_invite_sub">Add up to %1$d local profiles on this phone — each with their own streak, level &amp; saved words.</string>
+    <string name="family_active_badge">Active</string>
+    <string name="family_practiced_today">Practised today</string>
+    <string name="family_stat_summary">%1$d XP · %2$d words</string>
+    <string name="profile_ask_on_learn">Ask “Who\'s learning?” on Learn tab</string>
+    <string name="profile_round_complete_named">Round complete, %1$s!</string>
+    <string name="game_start_round_n">Start %1$d-Word Round</string>
+    <string name="backup_cloud_status_title">Google Account Auto Backup</string>
+    <string name="backup_cloud_status_sub">Up to %1$d local profiles are backed up automatically &amp; can be exported to Google Drive</string>
+    <string name="backup_export_profiles_title">Export all profiles (Google Drive / JSON)</string>
+    <string name="backup_export_profiles_sub">Save all learner profiles, progress &amp; saved words to a file</string>
+    <string name="backup_import_profiles_title">Restore profiles from backup (JSON)</string>
+    <string name="backup_import_profiles_sub">Restore from Google Drive, iCloud or another phone</string>
 </resources>

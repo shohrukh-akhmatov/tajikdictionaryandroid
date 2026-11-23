@@ -40,6 +40,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -54,9 +55,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import tj.tajikdictionary.R
+import tj.tajikdictionary.data.dictionary.DictionaryRepository
+import tj.tajikdictionary.data.settings.SettingsRepository
 import tj.tajikdictionary.data.user.FlashcardEntity
 import tj.tajikdictionary.data.user.UserDataRepository
+import tj.tajikdictionary.domain.model.DictionaryMode
 import tj.tajikdictionary.domain.model.Language
+import tj.tajikdictionary.domain.model.WordCardCandidate
 import tj.tajikdictionary.ui.components.EmptyState
 import tj.tajikdictionary.ui.components.keyboardDismissExempt
 import kotlin.math.roundToInt
@@ -72,12 +77,19 @@ enum class VocabFilter {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VocabularyListScreen(
+    dictionary: DictionaryRepository,
     userData: UserDataRepository,
+    settings: SettingsRepository,
     onBack: () -> Unit,
     onEntryClick: (Long) -> Unit,
     onDrillWeak: () -> Unit,
 ) {
     val flashcards by userData.flashcards.collectAsStateWithLifecycle(initialValue = emptyList())
+    val studyMode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_EN)
+    val resolvedById by produceState<Map<Long, WordCardCandidate>>(initialValue = emptyMap(), flashcards, studyMode) {
+        val ids = flashcards.map { it.entryId }
+        value = dictionary.learningCandidatesForIds(ids, studyMode).associateBy { it.entryId }
+    }
     var filter by remember { mutableStateOf(VocabFilter.ALL) }
     var search by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -106,7 +118,7 @@ fun VocabularyListScreen(
         )
     }
 
-    val filtered = remember(flashcards, filter, search, now) {
+    val filtered = remember(flashcards, resolvedById, filter, search, now) {
         val q = search.trim()
         flashcards.filter { card ->
             val matchesFilter = when (filter) {
@@ -116,14 +128,17 @@ fun VocabularyListScreen(
                 VocabFilter.LEARNING -> isLearning(card)
                 VocabFilter.MASTERED -> isMastered(card)
             }
+            val resolved = resolvedById[card.entryId]
+            val hw = resolved?.headword ?: card.headword
+            val pv = resolved?.preview?.takeIf { it.isNotBlank() } ?: card.preview
             val matchesSearch = q.isEmpty() ||
-                card.headword.contains(q, ignoreCase = true) ||
-                card.preview.contains(q, ignoreCase = true)
+                hw.contains(q, ignoreCase = true) ||
+                pv.contains(q, ignoreCase = true)
             matchesFilter && matchesSearch
         }.sortedWith(
             compareByDescending<FlashcardEntity> { isWeak(it) }
                 .thenBy { it.nextReviewAt }
-                .thenBy { it.headword.lowercase() },
+                .thenBy { (resolvedById[it.entryId]?.headword ?: it.headword).lowercase() },
         )
     }
 
@@ -134,7 +149,7 @@ fun VocabularyListScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                 ),
-                title = { Text(stringResource(R.string.vocab_title), fontWeight = FontWeight.Bold) },
+                title = { StudyLanguageTitle(stringResource(R.string.vocab_title), settings) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
@@ -212,6 +227,9 @@ fun VocabularyListScreen(
                     contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
                     items(filtered, key = { it.entryId }) { card ->
+                        val resolved = resolvedById[card.entryId]
+                        val displayHeadword = resolved?.headword ?: card.headword
+                        val displayPreview = resolved?.preview?.takeIf { it.isNotBlank() } ?: card.preview
                         val (badgeText, badgeColor) = when {
                             isMastered(card) -> stringResource(R.string.game_mastered) to Color(0xFF2E7D32)
                             isWeak(card) -> stringResource(R.string.vocab_filter_weak) to Color(0xFFD84315)
@@ -226,7 +244,7 @@ fun VocabularyListScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     Text(
-                                        card.headword,
+                                        displayHeadword,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
@@ -248,9 +266,9 @@ fun VocabularyListScreen(
                             },
                             supportingContent = {
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    if (card.preview.isNotBlank()) {
+                                    if (displayPreview.isNotBlank()) {
                                         Text(
-                                            card.preview,
+                                            displayPreview,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
@@ -274,9 +292,9 @@ fun VocabularyListScreen(
                                         scope.launch {
                                             userData.queueWordForPractice(
                                                 entryId = card.entryId,
-                                                language = Language.fromCode(card.lang),
-                                                headword = card.headword,
-                                                preview = card.preview,
+                                                language = resolved?.language ?: Language.fromCode(card.lang),
+                                                headword = displayHeadword,
+                                                preview = displayPreview,
                                             )
                                         }
                                         Toast.makeText(

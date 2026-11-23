@@ -68,3 +68,67 @@ data class EntryDetail(
 )
 
 data class DictionaryInfo(val dataVersion: String, val stats: String)
+
+enum class ProfileKind(val code: String, val defaultDailyGoal: Int, val roundSize: Int) {
+    ADULT("adult", defaultDailyGoal = 10, roundSize = 10),
+    CHILD("child", defaultDailyGoal = 5, roundSize = 6);
+
+    companion object {
+        fun fromCode(raw: String?): ProfileKind =
+            entries.firstOrNull { it.code.equals(raw, ignoreCase = true) || it.name.equals(raw, ignoreCase = true) }
+                ?: ADULT
+    }
+}
+
+/**
+ * Local learner profile on the device. Each profile has an isolated learning database and learning settings.
+ * Limited to [MAX_PROFILES] (3) per device so local storage and Google/iCloud backups remain compact.
+ */
+data class LearnerProfile(
+    val id: String,
+    val name: String,
+    val avatar: String,
+    val colorHex: String,
+    val kind: ProfileKind = ProfileKind.ADULT,
+    val createdAtMs: Long = 0L,
+) {
+    val isChild: Boolean get() = kind == ProfileKind.CHILD
+
+    companion object {
+        const val MAX_PROFILES = 3
+        const val DEFAULT_PROFILE_ID = "default"
+        const val DEFAULT_NAME = "Me"
+        const val DEFAULT_AVATAR = "🦊"
+        const val DEFAULT_COLOR = "#087653"
+        const val WHO_IS_LEARNING_COOLDOWN_MS = 10 * 60 * 1000L
+
+        val AVATARS = listOf("🦊", "🦁", "🐼", "🦉", "🐯", "🦋", "🚀", "🌟", "📚", "🏔️", "🎨", "⚽")
+        val COLORS = listOf("#087653", "#1E6F9F", "#7B1FA2", "#E65100", "#C62828", "#2E7D32")
+
+        fun defaultProfile(name: String = DEFAULT_NAME, createdAtMs: Long = 0L) = LearnerProfile(
+            id = DEFAULT_PROFILE_ID,
+            name = name,
+            avatar = DEFAULT_AVATAR,
+            colorHex = DEFAULT_COLOR,
+            kind = ProfileKind.ADULT,
+            createdAtMs = createdAtMs,
+        )
+    }
+}
+
+/** Lightweight summary of a profile's learning progress for the Family Board & Profile Switcher. */
+data class ProfileStatsSnapshot(
+    val profileId: String,
+    val currentStreakDays: Int = 0,
+    val longestStreakDays: Int = 0,
+    val totalXp: Int = 0,
+    val masteredCount: Int = 0,
+    val knownWordsCount: Int = 0,
+    val todayReviewed: Int = 0,
+    val dailyGoal: Int = 10,
+    val cefrCode: String = "A0",
+    val lastActiveDateKey: String? = null,
+) {
+    fun practicedToday(todayDateKey: String): Boolean =
+        lastActiveDateKey == todayDateKey && todayReviewed > 0
+}

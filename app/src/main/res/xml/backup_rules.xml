@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Back up all learner profile Room databases and DataStore settings to the user's Google account. -->
+    <include domain="database" path="." />
+    <include domain="file" path="datastore" />
+    <include domain="sharedpref" path="." />
+    <!-- Exclude the read-only bundled dictionary copy (re-extracted from APK assets on install). -->
+    <exclude domain="database" path="dictionary.sqlite" />
+    <exclude domain="database" path="dictionary.sqlite-journal" />
+    <exclude domain="sharedpref" path="dictionary_db.xml" />
+</full-backup-content>

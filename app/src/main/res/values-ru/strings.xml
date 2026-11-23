@@ -325,4 +325,44 @@
     <!-- Ads and GDPR consent (iOS StickyBannerView, Settings privacy row) -->
     <string name="ad_label">Реклама</string>
     <string name="settings_privacy">Настройки конфиденциальности</string>
+
+    <!-- Multi-user learner profiles, Family Board & Cloud Restore -->
+    <string name="profile_default_name">Я</string>
+    <string name="profile_who_is_learning">Кто сейчас учится?</string>
+    <string name="profile_who_is_learning_sub">Выберите профиль: у каждого своя серия, уровень и сохранённые слова.</string>
+    <string name="profile_switch">Сменить профиль</string>
+    <string name="profile_add_learner">Добавить профиль</string>
+    <string name="profile_edit_learner">Изменить профиль</string>
+    <string name="profile_name_label">Имя ученика</string>
+    <string name="profile_name_placeholder">напр. Зарина</string>
+    <string name="profile_avatar_label">Аватар</string>
+    <string name="profile_color_label">Цвет</string>
+    <string name="profile_kind_label">Тип профиля</string>
+    <string name="profile_kind_adult">Обычный</string>
+    <string name="profile_kind_adult_sub">Раунды по 10 слов · ввод и карточки</string>
+    <string name="profile_kind_child">Детский режим</string>
+    <string name="profile_kind_child_sub">Раунды по 6 слов · без клавиатуры и рекламы</string>
+    <string name="profile_save">Сохранить</string>
+    <string name="profile_delete">Удалить профиль</string>
+    <string name="profile_delete_confirm_title">Удалить профиль «%1$s»?</string>
+    <string name="profile_delete_confirm_msg">Весь прогресс и сохранённые слова для «%1$s» будут удалены с этого устройства.</string>
+    <string name="profile_limit_badge">%1$d / %2$d профилей</string>
+    <string name="profile_limit_reached">Достигнут лимит: максимум %1$d профиля на телефоне.</string>
+    <string name="profile_cloud_note">Профили хранятся на устройстве, автоматически сохраняются в аккаунт Google и доступны для экспорта.</string>
+    <string name="family_board_title">Семья и ученики</string>
+    <string name="family_board_subtitle">Нажмите на профиль, чтобы переключиться</string>
+    <string name="family_invite_title">Учитесь всей семьёй?</string>
+    <string name="family_invite_sub">Добавьте до %1$d профилей на один телефон — со своей серией, уровнем и словами.</string>
+    <string name="family_active_badge">Активен</string>
+    <string name="family_practiced_today">Занимался сегодня</string>
+    <string name="family_stat_summary">%1$d XP · %2$d слов</string>
+    <string name="profile_ask_on_learn">Спрашивать «Кто учится?» на вкладке Учить</string>
+    <string name="profile_round_complete_named">Раунд завершён, %1$s!</string>
+    <string name="game_start_round_n">Начать раунд (%1$d слов)</string>
+    <string name="backup_cloud_status_title">Автобэкап в аккаунт Google</string>
+    <string name="backup_cloud_status_sub">До %1$d локальных профилей сохраняются автоматически и могут быть экспортированы на Google Диск</string>
+    <string name="backup_export_profiles_title">Экспорт всех профилей (Google Диск / JSON)</string>
+    <string name="backup_export_profiles_sub">Сохранить все профили, прогресс и слова в файл</string>
+    <string name="backup_import_profiles_title">Восстановить профили из копии (JSON)</string>
+    <string name="backup_import_profiles_sub">Восстановить с Google Диска, iCloud или другого телефона</string>
 </resources>
