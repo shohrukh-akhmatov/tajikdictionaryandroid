@@ -268,7 +268,12 @@ fun TajikDictionaryRoot(
                     settings = container.settings,
                     onBack = { navController.popBackStack() },
                     onEntryClick = openEntry,
-                    onStudyTopic = { t -> navController.navigate("game?source=topic&topic=${Uri.encode(t)}") },
+                    onStudyTopic = { t ->
+                        scope.launch {
+                            container.settings.setStudyMode(container.settings.mode.first())
+                            navController.navigate("game?source=topic&topic=${Uri.encode(t)}")
+                        }
+                    },
                 )
             }
             composable(TopTab.LEARN.route) {
@@ -308,7 +313,12 @@ fun TajikDictionaryRoot(
                 FavoritesScreen(
                     userData = container.userData,
                     onEntryClick = openEntry,
-                    onStudyClick = { navController.navigate("game?source=saved") },
+                    onStudyClick = {
+                        scope.launch {
+                            container.settings.setStudyMode(container.settings.mode.first())
+                            navController.navigate("game?source=saved")
+                        }
+                    },
                 )
             }
             composable(TopTab.HISTORY.route) {

@@ -92,6 +92,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     val mode by settings.mode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_RU)
+    val studyMode by settings.studyMode.collectAsStateWithLifecycle(initialValue = DictionaryMode.TJ_EN)
     val theme by settings.theme.collectAsStateWithLifecycle(initialValue = ThemeSetting.SYSTEM)
     val speechRate by settings.speechRate.collectAsStateWithLifecycle(initialValue = 1.0f)
     val fontScale by settings.fontScale.collectAsStateWithLifecycle(initialValue = FontScaleSetting.MEDIUM)
@@ -191,6 +192,16 @@ fun SettingsScreen(
                     ModeSwitcher(
                         mode = mode,
                         onModeChange = { newMode -> scope.launch { settings.setMode(newMode) } },
+                    )
+                }
+            }
+
+            SectionHeader(title = stringResource(R.string.study_language))
+            AppCard {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    ModeSwitcher(
+                        mode = studyMode,
+                        onModeChange = { newMode -> scope.launch { settings.setStudyMode(newMode) } },
                     )
                 }
             }
